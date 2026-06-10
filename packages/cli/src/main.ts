@@ -18,7 +18,7 @@ if (existsSync(envFile)) {
   }
 }
 
-const program = new Command('forge')
+const program = new Command('tutorial-forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
   .version('0.1.0');
 

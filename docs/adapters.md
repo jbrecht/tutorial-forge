@@ -33,6 +33,6 @@ export const myAdapter: TutorialAdapter = {
 
 - **End setup on the screen step 1 expects.** The video starts (minus `leadInMs`) right where setup leaves off — wait for that screen to be fully rendered before returning.
 - **Seed deterministic state.** Same inputs should produce the same video. Create fixture data with fixed names/dates; avoid "3 minutes ago"-style relative content where you can.
-- **Run your app yourself.** The pipeline does not start your dev server; do that before `forge render` (or in your CI job before the render step).
+- **Run your app yourself.** The pipeline does not start your dev server; do that before `tutorial-forge render` (or in your CI job before the render step).
 - **Keep secrets in env vars.** The adapter is plain code in your repo; read credentials from the environment, as in any e2e test.
 - **Teardown failures are non-fatal.** They log a warning and the render still succeeds — teardown runs after the manifest is final.

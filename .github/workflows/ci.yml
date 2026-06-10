@@ -16,9 +16,11 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-liberation fonts-noto-color-emoji
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter tutorial-forge build
+      - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm --filter tutorial-forge test
       - run: pnpm --filter tutorial-forge-example-app exec playwright install --with-deps chromium
       - name: E2E render against example app
         run: pnpm --filter tutorial-forge-example-app e2e
+      - name: Publish dry-run
+        run: pnpm --filter tutorial-forge --filter tutorial-forge-cli publish --dry-run --no-git-checks

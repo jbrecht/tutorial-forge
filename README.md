@@ -20,7 +20,7 @@ export default tutorial('Getting started', [
 ```
 
 ```
-$ forge render
+$ tutorial-forge render
 ▶ getting-started — Getting started (3 steps)
 ✓ tutorials/dist/getting-started.mp4 (32.1s)
   subtitles: tutorials/dist/getting-started.srt
@@ -42,19 +42,19 @@ The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, 
 2. **Record** — Chromium is driven through your steps while Playwright records video. Each step holds on screen at least as long as its narration clip: narration drives pacing, never the reverse.
 3. **Post** — one FFmpeg invocation trims setup pre-roll, lays each narration clip at its measured offset, downscales, and transcodes to H.264/AAC.
 
-Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), kept on failure. Phases re-run independently: `forge render --phase post` re-merges without re-recording.
+Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), kept on failure. Phases re-run independently: `tutorial-forge render --phase post` re-merges without re-recording.
 
 ## Requirements
 
 - Node ≥ 20, `ffmpeg`/`ffprobe` ≥ 6 on PATH, Playwright Chromium (`npx playwright install chromium`)
-- Check your environment with `forge doctor`
+- Check your environment with `tutorial-forge doctor`
 
 ## Packages
 
 | Package | What |
 |---|---|
 | `packages/core` (`tutorial-forge`) | The library: types, spec builders, pipeline, TTS providers |
-| `packages/cli` (`tutorial-forge-cli`) | `forge render / list / doctor / clean` |
+| `packages/cli` (`tutorial-forge-cli`) | `tutorial-forge render / list / doctor / clean` (alias: `tforge`) |
 | `packages/example-app` | Self-contained demo app + tutorial; the dev/CI target |
 
 ## Quick start (this repo)

@@ -10,12 +10,14 @@ npx playwright install chromium
 You also need `ffmpeg` and `ffprobe` (≥ 6) on PATH. Verify everything with:
 
 ```sh
-pnpm exec forge doctor
+pnpm exec tutorial-forge doctor
 ```
+
+The binary is also installed under the shorter alias `tforge`.
 
 ## Configure
 
-Create `forge.config.ts` at your repo root (or wherever you run `forge`):
+Create `forge.config.ts` at your repo root (or wherever you run `tutorial-forge`):
 
 ```ts
 import { defineConfig, ElevenLabs } from 'tutorial-forge';
@@ -66,12 +68,12 @@ To pick a voice, copy its ID from the ElevenLabs voice library and pass it as `E
 ## Render
 
 ```sh
-forge list                      # discovered tutorials: id, title, step count
-forge render                    # render everything
-forge render --only my-id      # iterate on one tutorial
-forge render --headed          # watch the browser while recording
-forge render --phase post      # re-merge without re-recording (uses .forge/<id>/)
-forge clean --cache            # remove work dirs and the TTS cache
+tutorial-forge list                      # discovered tutorials: id, title, step count
+tutorial-forge render                    # render everything
+tutorial-forge render --only my-id      # iterate on one tutorial
+tutorial-forge render --headed          # watch the browser while recording
+tutorial-forge render --phase post      # re-merge without re-recording (uses .forge/<id>/)
+tutorial-forge clean --cache            # remove work dirs and the TTS cache
 ```
 
 Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'burn'` to burn them in, `'off'` to skip).

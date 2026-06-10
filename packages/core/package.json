@@ -1,9 +1,29 @@
 {
   "name": "tutorial-forge",
   "version": "0.1.0",
-  "description": "Turn scripted Playwright walkthroughs into narrated tutorial videos",
+  "description": "Turn scripted Playwright walkthroughs into narrated tutorial videos (MP4). Tutorials are source code: re-render instead of re-recording when your UI changes.",
   "type": "module",
   "license": "MIT",
+  "author": "John Brecht <john.brecht@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbrecht/tutorial-forge.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/jbrecht/tutorial-forge#readme",
+  "bugs": "https://github.com/jbrecht/tutorial-forge/issues",
+  "keywords": [
+    "playwright",
+    "tutorial",
+    "video",
+    "screen-recording",
+    "tts",
+    "narration",
+    "documentation",
+    "ffmpeg",
+    "elevenlabs",
+    "demo"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

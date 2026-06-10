@@ -1,11 +1,28 @@
 {
   "name": "tutorial-forge-cli",
   "version": "0.1.0",
-  "description": "CLI for tutorial-forge",
+  "description": "CLI for tutorial-forge: render scripted Playwright walkthroughs into narrated tutorial videos",
   "type": "module",
   "license": "MIT",
+  "author": "John Brecht <john.brecht@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbrecht/tutorial-forge.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/jbrecht/tutorial-forge#readme",
+  "bugs": "https://github.com/jbrecht/tutorial-forge/issues",
+  "keywords": [
+    "playwright",
+    "tutorial",
+    "video",
+    "screen-recording",
+    "tts",
+    "cli"
+  ],
   "bin": {
-    "forge": "./dist/main.js"
+    "tutorial-forge": "./dist/main.js",
+    "tforge": "./dist/main.js"
   },
   "files": ["dist"],
   "scripts": {
