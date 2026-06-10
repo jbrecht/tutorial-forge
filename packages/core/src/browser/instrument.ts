@@ -1,6 +1,7 @@
 import type { Locator, Page } from 'playwright';
 import type { CalloutRecord } from '../types.js';
 import { CURSOR_TRAVEL_MS } from './cursor.js';
+import { CALLOUT_VISIBLE_MS } from './callout.js';
 import { logger } from '../util/logger.js';
 
 export interface InstrumentHooks {
@@ -65,12 +66,6 @@ async function presentAction(
       await page.waitForTimeout(CURSOR_TRAVEL_MS + 50);
     }
     if (CLICK_METHODS.has(method)) {
-      if (hooks.cursor) {
-        await page.evaluate(
-          ([x, y]) => (window as { __forgeCursor?: { pulse(x: number, y: number): void } }).__forgeCursor?.pulse(x!, y!),
-          [cx, cy],
-        );
-      }
       if (hooks.callouts) {
         await page.evaluate(
           ([x, y, w, h]) =>
@@ -78,6 +73,16 @@ async function presentAction(
           [box.x, box.y, box.width, box.height],
         );
         hooks.onCallout({ atMs: hooks.nowMs(), x: box.x, y: box.y, w: box.width, h: box.height });
+        // Let the ring play out fully BEFORE the click: it sits above app
+        // content (high z-index), so if it lingered past the click it would
+        // float over whatever the click reveals — modal backdrops, new routes.
+        await page.waitForTimeout(CALLOUT_VISIBLE_MS + 250);
+      }
+      if (hooks.cursor) {
+        await page.evaluate(
+          ([x, y]) => (window as { __forgeCursor?: { pulse(x: number, y: number): void } }).__forgeCursor?.pulse(x!, y!),
+          [cx, cy],
+        );
       }
     }
   } catch (err) {
