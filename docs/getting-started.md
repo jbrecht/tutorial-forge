@@ -32,6 +32,37 @@ export default defineConfig({
 
 CLI flags override config; config overrides built-in defaults.
 
+## TTS providers and API keys
+
+The `forge` CLI automatically loads a `.env` file from the directory you run it in (variables already set in your shell take precedence). Put provider credentials there and keep it out of version control — this repo's `.gitignore` already excludes `.env`.
+
+```sh
+# .env
+ELEVENLABS_API_KEY=sk_...
+# or
+OPENAI_API_KEY=sk-...
+```
+
+| Provider | Config | Credentials | Notes |
+|---|---|---|---|
+| `ElevenLabs({ voiceId })` | required `voiceId` | `ELEVENLABS_API_KEY` (or `apiKey` option) | Best quality; see key setup below |
+| `OpenAITTS({ voice })` | optional voice, default `alloy` | `OPENAI_API_KEY` (or `apiKey` option) | |
+| `Piper({ model })` | path to a `.onnx` voice model | none | Local/offline; needs the `piper` CLI installed |
+| `SilentProvider()` | — | none | Deterministic silence; for tests and CI |
+
+Narration audio is cached by content hash of provider + voice + text (`~/.cache/tutorial-forge/tts` by default), so each narration line is synthesized exactly once — re-renders and UI-only changes never hit the TTS API.
+
+### Creating an ElevenLabs key with minimal access
+
+In the ElevenLabs dashboard, go to **Settings → API Keys → Create API Key**:
+
+1. Name it after your project (e.g. `tutorial-forge`).
+2. Enable **Restrict Key**.
+3. Under Endpoints, set **Text to Speech → Access** — leave everything else at **No Access**. The pipeline only ever calls `POST /v1/text-to-speech/{voiceId}`; it does not need Voices, History, or any other endpoint (you pass the voice ID in `forge.config.ts`).
+4. Optionally set a per-period credit limit as a spending cap; thanks to the cache, steady-state usage is only the lines you change.
+
+To pick a voice, copy its ID from the ElevenLabs voice library and pass it as `ElevenLabs({ voiceId: '...' })`.
+
 ## Render
 
 ```sh

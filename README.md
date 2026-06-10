@@ -68,6 +68,6 @@ pnpm serve &          # demo app on :4173
 pnpm forge render     # → tutorials/dist/getting-started.mp4
 ```
 
-By default the example renders with silent placeholder narration. For real voices set `FORGE_TTS=elevenlabs` (needs `ELEVENLABS_API_KEY`) or `FORGE_TTS=openai` (needs `OPENAI_API_KEY`).
+By default the example renders with silent placeholder narration. For real voices, copy `.env.example` to `.env` in `packages/example-app`, set `FORGE_TTS=elevenlabs` (with `ELEVENLABS_API_KEY`) or `FORGE_TTS=openai` (with `OPENAI_API_KEY`), and re-run. The CLI loads `.env` from the directory you run it in; `.env` is gitignored. See [getting started](docs/getting-started.md#tts-providers-and-api-keys) for creating a minimally-scoped ElevenLabs key (only "Text to Speech" access is needed).
 
 Docs: [getting started](docs/getting-started.md) · [writing tutorials](docs/writing-tutorials.md) · [adapters](docs/adapters.md)
