@@ -52,6 +52,13 @@ The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, 
 
 Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), kept on failure. Phases re-run independently: `tutorial-forge render --phase post` re-merges without re-recording.
 
+## How it compares
+
+- **[playwright-recast](https://github.com/ThePatriczek/playwright-recast)** is the closest open-source neighbor: it post-processes recordings of your existing Playwright *tests* into videos, fitting voiceover onto the recording by retiming it. tutorial-forge inverts that relationship — narration is synthesized and measured *first*, and the browser holds each step on screen live until its line finishes, so pacing always feels deliberate. You also author tutorials as dedicated specs (with an adapter that seeds app state) rather than reusing tests. If you want videos from tests you already have, recast is a great fit; if you want to author tutorials as a first-class artifact, that's what this is for.
+- **Recording-based SaaS** (Videate, Guidde, Clueso, Arcade, Supademo) solves the same staleness problem starting from screen captures, with editors and hosting on top. tutorial-forge is the code-native, open-source take: tutorials live in your repo, are reviewed in PRs, and regenerate in CI — no recording step exists at all.
+- **[Remotion](https://remotion.dev)** is programmatic video as a React framework — a substrate you could build a pipeline like this on, not a tutorial tool itself.
+- **[VHS](https://github.com/charmbracelet/vhs)** does tapes-as-code for *terminal* recordings. tutorial-forge is the same philosophy pointed at web apps, with narration.
+
 ## Requirements
 
 - Node ≥ 20, `ffmpeg`/`ffprobe` ≥ 6 on PATH, Playwright Chromium (`npx playwright install chromium`)
