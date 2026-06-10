@@ -1,6 +1,14 @@
 # tutorial-forge
 
+[![npm](https://img.shields.io/npm/v/tutorial-forge)](https://www.npmjs.com/package/tutorial-forge)
+[![CI](https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/tutorial-forge)](LICENSE)
+
 Turn scripted Playwright walkthroughs into finished, narrated tutorial videos (MP4).
+
+![demo: forge renders a narrated walkthrough of an example app](docs/assets/demo.gif)
+
+*Excerpt from the example app's generated tutorial — fake cursor, click highlights, and pacing all derive from the script below. [Watch the full video with narration](https://github.com/jbrecht/tutorial-forge/blob/main/docs/assets/getting-started.mp4).*
 
 **Tutorials are source code.** Each tutorial is a TypeScript file pairing narration lines with raw Playwright actions. When your app's UI changes, you re-run the pipeline instead of re-recording. Tutorials live in your repo, get reviewed in PRs, and regenerate in CI.
 
@@ -31,11 +39,11 @@ The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, 
 ## How it works
 
 ```
-┌─────────┐     ┌──────────┐     ┌──────────┐
-│ 1. TTS  │ ──▶ │ 2. RECORD │ ──▶ │ 3. POST  │
-└─────────┘     └──────────┘     └──────────┘
- audio files     raw .webm +      final .mp4
- + durations     manifest.json    (+ .srt)
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│   1. TTS    │ ───▶ │  2. RECORD  │ ───▶ │   3. POST   │
+└─────────────┘      └─────────────┘      └─────────────┘
+  audio files          raw .webm +          final .mp4
+  + durations          manifest.json        (+ .srt)
 ```
 
 1. **TTS** — every narration line is synthesized and measured first (content-hash cached, so unchanged lines are never re-synthesized).
