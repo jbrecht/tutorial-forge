@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lumen Events — Events</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav>
+    <span class="brand">Lumen Events</span>
+    <a href="/">Dashboard</a>
+    <a href="/events" class="active">Events</a>
+    <a href="/settings">Settings</a>
+  </nav>
+  <main>
+    <h1>Events</h1>
+    <p class="sub">Everything on your calendar.</p>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+        <strong>All events</strong>
+        <button class="btn" id="new-event">New event</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
+        <tbody id="event-rows">
+          <tr><td>Spring Product Launch</td><td>Conference</td><td>Published</td></tr>
+          <tr><td>Customer Roundtable</td><td>Meetup</td><td>Draft</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" role="dialog" aria-labelledby="modal-title">
+      <h2 id="modal-title">New event</h2>
+      <p class="sub" style="margin-bottom:0">It only takes a few seconds.</p>
+      <form id="event-form">
+        <label for="event-name">Event name</label>
+        <input id="event-name" name="name" placeholder="e.g. Summer Kickoff" required>
+        <label for="event-type">Event type</label>
+        <select id="event-type" name="type">
+          <option value="">Choose a type…</option>
+          <option>Conference</option>
+          <option>Meetup</option>
+          <option>Webinar</option>
+          <option>Workshop</option>
+        </select>
+        <div class="actions">
+          <button type="button" class="btn secondary" id="cancel-event">Cancel</button>
+          <button type="submit" class="btn" id="create-event">Create event</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="toast" id="toast">Event created</div>
+  <script src="/app.js"></script>
+</body>
+</html>

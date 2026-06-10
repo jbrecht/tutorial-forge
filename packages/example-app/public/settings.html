@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lumen Events — Settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav>
+    <span class="brand">Lumen Events</span>
+    <a href="/">Dashboard</a>
+    <a href="/events">Events</a>
+    <a href="/settings" class="active">Settings</a>
+  </nav>
+  <main>
+    <h1>Settings</h1>
+    <p class="sub">Workspace preferences.</p>
+    <div class="card">
+      <div class="switch-row">
+        <div>
+          <strong>Email reminders</strong>
+          <div class="stat-label">Notify registrants 24 hours before an event.</div>
+        </div>
+        <input type="checkbox" id="reminders" style="width:20px;height:20px" checked>
+      </div>
+      <div class="switch-row">
+        <div>
+          <strong>Public event pages</strong>
+          <div class="stat-label">Let anyone view event details without signing in.</div>
+        </div>
+        <input type="checkbox" id="public-pages" style="width:20px;height:20px">
+      </div>
+    </div>
+  </main>
+</body>
+</html>

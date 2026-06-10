@@ -1,0 +1,58 @@
+import { z } from 'zod';
+import type { TutorialAdapter, TTSProvider } from './types.js';
+
+/** Shape of forge.config.ts in a consumer repo. CLI flags override these; these override defaults. */
+export interface ForgeConfig {
+  adapter: TutorialAdapter;
+  tts: TTSProvider;
+  /** Where final videos land. Default: tutorials/dist */
+  outDir?: string;
+  /** Globs for tutorial discovery. Default: ["**\/*.tutorial.ts"] */
+  tutorials?: string[];
+  viewport?: { width: number; height: number };
+  headless?: boolean;
+  cursor?: boolean;
+  callouts?: boolean;
+  subtitles?: 'burn' | 'sidecar' | 'off';
+  leadInMs?: number;
+  keepWorkDir?: boolean;
+  ttsCacheDir?: string;
+  ttsConcurrency?: number;
+}
+
+const configSchema = z.object({
+  adapter: z.object({
+    baseURL: z.string().url(),
+    setup: z.function(),
+    teardown: z.function().optional(),
+  }),
+  tts: z.object({
+    cacheKey: z.string().min(1),
+    synthesize: z.function(),
+  }),
+  outDir: z.string().optional(),
+  tutorials: z.array(z.string()).optional(),
+  viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+  headless: z.boolean().optional(),
+  cursor: z.boolean().optional(),
+  callouts: z.boolean().optional(),
+  subtitles: z.enum(['burn', 'sidecar', 'off']).optional(),
+  leadInMs: z.number().nonnegative().optional(),
+  keepWorkDir: z.boolean().optional(),
+  ttsCacheDir: z.string().optional(),
+  ttsConcurrency: z.number().int().positive().optional(),
+});
+
+export function defineConfig(config: ForgeConfig): ForgeConfig {
+  return config;
+}
+
+/** Validate a loaded config object (e.g. from forge.config.ts). Throws with a readable message. */
+export function validateConfig(config: unknown): ForgeConfig {
+  const parsed = configSchema.safeParse(config);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`);
+    throw new Error(`Invalid forge config:\n${issues.join('\n')}`);
+  }
+  return config as ForgeConfig;
+}

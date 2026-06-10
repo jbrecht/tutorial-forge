@@ -1,0 +1,33 @@
+{
+  "name": "tutorial-forge",
+  "version": "0.1.0",
+  "description": "Turn scripted Playwright walkthroughs into narrated tutorial videos",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "execa": "^9.5.0",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "playwright": "^1.59.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,24 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-liberation fonts-noto-color-emoji
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter tutorial-forge build
+      - run: pnpm typecheck
+      - run: pnpm --filter tutorial-forge test
+      - run: pnpm --filter tutorial-forge-example-app exec playwright install --with-deps chromium
+      - name: E2E render against example app
+        run: pnpm --filter tutorial-forge-example-app e2e

@@ -1,0 +1,28 @@
+{
+  "name": "tutorial-forge-cli",
+  "version": "0.1.0",
+  "description": "CLI for tutorial-forge",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "forge": "./dist/main.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'no unit tests in cli'"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "jiti": "^2.4.0",
+    "tinyglobby": "^0.2.10",
+    "tutorial-forge": "workspace:*"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

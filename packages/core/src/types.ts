@@ -1,0 +1,117 @@
+import type { Page } from 'playwright';
+
+/** Gets the target app into a known, recordable state. The only app-specific code. */
+export interface TutorialAdapter {
+  /** Base URL of the running app, e.g. http://localhost:3000 */
+  baseURL: string;
+  /** Auth, seeding, navigation to a starting screen. Runs after page creation, before step 1. Excluded from the final video by default. */
+  setup(page: Page): Promise<void>;
+  /** Optional cleanup after recording (delete seeded data, logout). Never recorded. */
+  teardown?(page: Page): Promise<void>;
+}
+
+export interface Step {
+  /** Stable id, auto-derived from index if omitted. Used in manifest, cache keys, logs. */
+  id?: string;
+  /** The narration line spoken over this step. Plain text; may be ''. */
+  narration: string;
+  /** The action. Receives the raw Playwright Page. May be a no-op for pure-narration steps. */
+  run: (page: Page) => Promise<void>;
+  /** Optional readiness hook awaited after run(); use when auto-waiting isn't enough. */
+  waitFor?: (page: Page) => Promise<void>;
+  /** Extra hold time (ms) after both narration and action complete. Default 400. */
+  settleMs?: number;
+}
+
+export interface Tutorial {
+  /** Slug, used for output filenames. */
+  id: string;
+  title: string;
+  description?: string;
+  steps: Step[];
+}
+
+export interface TTSProvider {
+  /** Unique key for cache partitioning, e.g. "elevenlabs:daniel:eleven_turbo_v2" */
+  cacheKey: string;
+  /** Synthesize one narration line to a WAV/MP3 file at outPath. Duration is measured by the pipeline via ffprobe, not trusted from the provider. */
+  synthesize(text: string, outPath: string): Promise<void>;
+}
+
+export interface RenderOptions {
+  tts: TTSProvider;
+  /** Path to final .mp4 */
+  output: string;
+  /** Default: .forge/<tutorial-id>/ */
+  workDir?: string;
+  /** Default 1920x1080 */
+  viewport?: { width: number; height: number };
+  /** Default true */
+  headless?: boolean;
+  /** Inject fake cursor, default true */
+  cursor?: boolean;
+  /** Highlight clicked elements, default true */
+  callouts?: boolean;
+  /** Default 'sidecar' (writes .srt next to mp4) */
+  subtitles?: 'burn' | 'sidecar' | 'off';
+  /** Silence before step narration starts, default 300 */
+  leadInMs?: number;
+  /** Default false on success, true on failure */
+  keepWorkDir?: boolean;
+  /** Directory for the content-hashed TTS cache. Default: ~/.cache/tutorial-forge/tts */
+  ttsCacheDir?: string;
+  /** TTS synthesis concurrency, default 4 */
+  ttsConcurrency?: number;
+  /** Which phases to run. Default 'all'. */
+  phase?: 'tts' | 'record' | 'post' | 'all';
+}
+
+export interface CalloutRecord {
+  atMs: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ManifestStep {
+  id: string;
+  narration: string;
+  audioFile: string | null;
+  /** 0 for silent steps */
+  audioDurationMs: number;
+  /** Offset from video start */
+  startMs: number;
+  /** When run() began */
+  actionStartMs: number;
+  /** When run()+waitFor resolved */
+  actionEndMs: number;
+  /** When the step's hold completed */
+  endMs: number;
+  callouts: CalloutRecord[];
+}
+
+/** Written to workDir as manifest.json; the contract between record and post phases. */
+export interface TimingManifest {
+  tutorialId: string;
+  fps: number;
+  recordingStartEpochMs: number;
+  /** Offset (ms) into the raw webm where the recording clock's zero falls, derived from the calibration flash. 0 if undetected. */
+  videoClockOffsetMs?: number;
+  steps: ManifestStep[];
+  totalDurationMs: number;
+}
+
+/** Thrown when a step's run()/waitFor() rejects during recording. */
+export class StepError extends Error {
+  constructor(
+    public readonly tutorialId: string,
+    public readonly stepId: string,
+    public override readonly cause: unknown,
+  ) {
+    super(
+      `Step "${stepId}" of tutorial "${tutorialId}" failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    this.name = 'StepError';
+  }
+}
