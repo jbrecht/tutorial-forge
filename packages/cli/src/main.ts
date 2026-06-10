@@ -1,9 +1,22 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { renderCommand } from './render.js';
 import { listCommand } from './list.js';
 import { doctorCommand } from './doctor.js';
 import { cleanCommand } from './clean.js';
+
+// Load .env from the invocation directory so TTS keys don't need exporting.
+// Shell-set variables take precedence (loadEnvFile never overrides them).
+const envFile = join(process.cwd(), '.env');
+if (existsSync(envFile)) {
+  try {
+    process.loadEnvFile(envFile);
+  } catch {
+    /* Node < 20.12 or malformed file — fall back to the shell environment */
+  }
+}
 
 const program = new Command('forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
