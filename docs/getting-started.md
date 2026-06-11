@@ -80,6 +80,8 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 
 **Zoom-on-callout:** pass `--zoom` (or set `zoom: true` / `zoom: { factor: 1.5 }` in config) to smoothly zoom toward each click target and back out — the camera leads the click, holds through what it reveals, then releases. Composited in post from the timing manifest, so it adds nothing to recording time.
 
+**GIF export:** pass `--gif` to also write an animated GIF next to the MP4 — fps-downsampled, palette-optimized, with narration captions burned in (GIFs are silent). Excerpt a step range with `--gif-steps open-modal..create-event`, or configure via `gif: { widthPx, fps, captions, steps }`. Perfect for READMEs and social posts.
+
 **Idle speed-up:** pass `--idle-speedup` (or `idleSpeedup: true` / `{ maxIdleMs: 2000, speed: 3 }`) to fast-forward narration-free waits — spinners, slow loads, long silent steps. Narration playback and click choreography always stay at 1x; audio offsets and subtitle cues are remapped to the shortened timeline automatically.
 
 ## Debugging a failing tutorial

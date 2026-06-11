@@ -31,6 +31,7 @@ export { defaultCacheDir, synthesizeCached } from './tts/cache.js';
 
 export { generateSrt, computeCues, srtTime, wrapText, type Cue } from './post/subtitles.js';
 export { captionHtml, renderCaptionImages, DEFAULT_CAPTION_STYLE, type CaptionStyle } from './post/captions.js';
+export { buildGifArgs, resolveGifWindow, DEFAULT_GIF, type GifConfig, type GifWindow } from './post/gif.js';
 export {
   buildMergeArgs,
   probeDurationMs,

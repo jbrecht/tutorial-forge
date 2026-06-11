@@ -30,6 +30,8 @@ export interface ForgeConfig {
   idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
   /** Styling for burned-in captions (subtitles: 'burn'). */
   captionStyle?: { fontSizePx?: number; maxWidthPx?: number; bottomMarginPx?: number };
+  /** Also export an animated GIF per tutorial (captioned by default). */
+  gif?: boolean | { widthPx?: number; fps?: number; captions?: boolean; steps?: string };
 }
 
 const configSchema = z.object({
@@ -76,6 +78,17 @@ const configSchema = z.object({
       maxWidthPx: z.number().positive().optional(),
       bottomMarginPx: z.number().nonnegative().optional(),
     })
+    .optional(),
+  gif: z
+    .union([
+      z.boolean(),
+      z.object({
+        widthPx: z.number().int().positive().optional(),
+        fps: z.number().positive().max(30).optional(),
+        captions: z.boolean().optional(),
+        steps: z.string().optional(),
+      }),
+    ])
     .optional(),
 });
 

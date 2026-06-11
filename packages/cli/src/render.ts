@@ -18,6 +18,20 @@ export interface RenderCmdOptions {
   debug?: boolean;
   /** Enable idle speed-up (overrides config.idleSpeedup). */
   idleSpeedup?: boolean;
+  /** Also export an animated GIF. */
+  gif?: boolean;
+  /** GIF excerpt range ("step-id" or "from..to"). Implies --gif. */
+  gifSteps?: string;
+}
+
+/** Merge --gif/--gif-steps flags with config.gif (flags win; --gif-steps implies --gif). */
+function resolveGifOption(
+  opts: RenderCmdOptions,
+  configGif: ForgeConfig['gif'],
+): ForgeConfig['gif'] {
+  if (!opts.gif && !opts.gifSteps) return configGif;
+  const base = typeof configGif === 'object' ? configGif : {};
+  return opts.gifSteps ? { ...base, steps: opts.gifSteps } : { ...base };
 }
 
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
@@ -64,11 +78,13 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         defaultLang,
         zoom: opts.zoom ?? config.zoom,
         idleSpeedup: opts.idleSpeedup ?? config.idleSpeedup,
+        gif: resolveGifOption(opts, config.gif),
         debug: opts.debug,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {
         console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
         if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
+        if (result.gifPath) console.log(`  gif:       ${result.gifPath}`);
       } else {
         console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
       }

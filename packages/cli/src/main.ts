@@ -20,7 +20,7 @@ if (existsSync(envFile)) {
 
 const program = new Command('tutorial-forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
-  .version('0.6.0');
+  .version('0.7.0');
 
 program
   .command('render')
@@ -36,6 +36,8 @@ program
   .option('--lang <langs>', 'render these languages (comma-separated, e.g. "es,fr"); overrides config.languages')
   .option('--zoom', 'zoom toward click targets (overrides config.zoom)')
   .option('--idle-speedup', 'fast-forward narration-free waits (overrides config.idleSpeedup)')
+  .option('--gif', 'also export an animated GIF (captioned)')
+  .option('--gif-steps <range>', 'GIF excerpt: a step id or "from-id..to-id" (implies --gif)')
   .option('--debug', 'keep work dir with Playwright trace, console log, per-step screenshots')
   .action(async (globs: string[], opts) => {
     if (!['tts', 'record', 'post', 'all'].includes(opts.phase)) {

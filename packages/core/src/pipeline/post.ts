@@ -5,6 +5,7 @@ import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
 import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
 import { computeCues, generateSrt } from '../post/subtitles.js';
 import { DEFAULT_CAPTION_STYLE, renderCaptionImages, type CaptionImage } from '../post/captions.js';
+import { buildGifArgs, resolveGifWindow, DEFAULT_GIF, type GifConfig } from '../post/gif.js';
 import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
 import {
   buildRetimeFilter,
@@ -26,11 +27,14 @@ export interface PostPhaseOptions {
   idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
   /** Styling for burned-in captions (subtitles: 'burn'). */
   captionStyle?: Partial<typeof DEFAULT_CAPTION_STYLE>;
+  /** Also export an animated GIF (captioned by default). */
+  gif?: boolean | Partial<GifConfig>;
 }
 
 export interface PostPhaseResult {
   output: string;
   srtPath: string | null;
+  gifPath: string | null;
   videoClockOffsetMs: number;
   outputDurationMs: number;
 }
@@ -152,9 +156,43 @@ export async function runPostPhase(
 
   const outputDurationMs = await probeDurationMs(opts.output);
   logger.info(`post: wrote ${opts.output} (${(outputDurationMs / 1000).toFixed(1)}s)`);
+
+  let gifPath: string | null = null;
+  if (opts.gif) {
+    const gifConfig = { ...DEFAULT_GIF, ...(typeof opts.gif === 'object' ? opts.gif : {}) };
+    const window = gifConfig.steps
+      ? resolveGifWindow(manifest, trimStartMs, gifConfig.steps, mapMs)
+      : undefined;
+    // GIFs are silent — burn captions unless the video already has them.
+    let gifCaptions: { items: CaptionImage[]; bottomMarginPx: number } | undefined;
+    if (gifConfig.captions && opts.subtitles !== 'burn') {
+      const cues = computeCues(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs }).filter(
+        (c) => !window || (c.endMs > window.startMs && c.startMs < window.endMs),
+      );
+      const style = { ...DEFAULT_CAPTION_STYLE, ...opts.captionStyle };
+      gifCaptions = {
+        items: await renderCaptionImages(cues, style, join(opts.workDir, 'captions-gif'), opts.viewport.width),
+        bottomMarginPx: style.bottomMarginPx,
+      };
+    }
+    gifPath = join(dirname(opts.output), basename(opts.output, extname(opts.output)) + '.gif');
+    await runFfmpeg(
+      buildGifArgs({
+        source: opts.output,
+        output: gifPath,
+        widthPx: gifConfig.widthPx,
+        fps: gifConfig.fps,
+        window,
+        captions: gifCaptions,
+      }),
+    );
+    logger.info(`post: wrote ${gifPath}${window ? ` (steps ${gifConfig.steps})` : ''}`);
+  }
+
   return {
     output: opts.output,
     srtPath: opts.subtitles === 'sidecar' ? srtPath : null,
+    gifPath,
     videoClockOffsetMs: videoOffsetMs,
     outputDurationMs,
   };

@@ -79,6 +79,7 @@ export async function render(
       zoom: options.zoom,
       idleSpeedup: options.idleSpeedup,
       captionStyle: options.captionStyle,
+      gif: options.gif,
     });
 
     if (!(options.keepWorkDir ?? options.debug ?? false)) {
@@ -111,6 +112,7 @@ function partialResult(workDir: string, output: string, manifest: TimingManifest
   return {
     output,
     srtPath: null,
+    gifPath: null,
     videoClockOffsetMs: manifest.videoClockOffsetMs ?? 0,
     outputDurationMs: 0,
     manifest,

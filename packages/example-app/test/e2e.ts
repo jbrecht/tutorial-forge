@@ -100,6 +100,7 @@ try {
     ttsCacheDir: join(outDir, 'tts-cache'),
     idleSpeedup: true,
     subtitles: 'burn', // exercises browser-rendered caption overlays (+ retime remap)
+    gif: { widthPx: 480, steps: 'narrated..silent-wait' }, // exercises GIF excerpt export
   });
   const idleUncompressedMs =
     idleResult.manifest.totalDurationMs - (idleResult.manifest.steps[0]!.startMs - 300);
@@ -108,6 +109,12 @@ try {
     `idle speed-up saved >2s (${idleResult.outputDurationMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
   );
   assert.equal(idleResult.srtPath, null, 'burn mode writes no sidecar srt');
+  assert.ok(idleResult.gifPath && existsSync(idleResult.gifPath), 'gif excerpt exists');
+  const gifDurationMs = await probeDurationMs(idleResult.gifPath!);
+  assert.ok(
+    gifDurationMs < idleResult.outputDurationMs,
+    `gif excerpt (${gifDurationMs}ms) is shorter than the full video (${idleResult.outputDurationMs}ms)`,
+  );
   console.log(
     `e2e OK [idle]: ${(idleUncompressedMs / 1000).toFixed(1)}s → ${(idleResult.outputDurationMs / 1000).toFixed(1)}s`,
   );

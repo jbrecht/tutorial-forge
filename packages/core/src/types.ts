@@ -67,6 +67,11 @@ export interface RenderOptions {
   subtitles?: 'burn' | 'sidecar' | 'off';
   /** Styling for burned-in captions. */
   captionStyle?: { fontSizePx?: number; maxWidthPx?: number; bottomMarginPx?: number };
+  /**
+   * Also export an animated GIF next to the MP4 (captions burned in by
+   * default — GIFs are silent). Configure width/fps/step excerpt via object.
+   */
+  gif?: boolean | { widthPx?: number; fps?: number; captions?: boolean; steps?: string };
   /** Silence before step narration starts, default 300 */
   leadInMs?: number;
   /** Default false on success, true on failure */
