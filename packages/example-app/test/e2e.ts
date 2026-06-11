@@ -101,6 +101,7 @@ try {
     idleSpeedup: true,
     subtitles: 'burn', // exercises browser-rendered caption overlays (+ retime remap)
     gif: { widthPx: 480, steps: 'narrated..silent-wait' }, // exercises GIF excerpt export
+    recorder: 'screencast', // exercises CDP capture with explicit frame timestamps
   });
   const idleUncompressedMs =
     idleResult.manifest.totalDurationMs - (idleResult.manifest.steps[0]!.startMs - 300);
@@ -109,6 +110,8 @@ try {
     `idle speed-up saved >2s (${idleResult.outputDurationMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
   );
   assert.equal(idleResult.srtPath, null, 'burn mode writes no sidecar srt');
+  assert.equal(idleResult.manifest.capture?.recorder, 'screencast', 'manifest records the recorder');
+  assert.equal(idleResult.videoClockOffsetMs, 0, 'screencast capture is clock-aligned (no flash)');
   assert.ok(idleResult.gifPath && existsSync(idleResult.gifPath), 'gif excerpt exists');
   const gifDurationMs = await probeDurationMs(idleResult.gifPath!);
   assert.ok(

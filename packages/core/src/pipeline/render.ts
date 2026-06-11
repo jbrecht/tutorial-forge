@@ -63,6 +63,7 @@ export async function render(
             callouts: options.callouts ?? true,
             leadInMs,
             lang,
+            recorder: options.recorder,
             debug: options.debug,
           })
         : await loadManifest(workDir);

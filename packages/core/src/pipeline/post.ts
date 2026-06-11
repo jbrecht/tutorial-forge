@@ -47,9 +47,10 @@ export async function runPostPhase(
   manifest: TimingManifest,
   opts: PostPhaseOptions,
 ): Promise<PostPhaseResult> {
-  const rawVideo = join(opts.workDir, RAW_VIDEO_FILE);
+  const rawFile = manifest.capture?.rawFile ?? RAW_VIDEO_FILE;
+  const rawVideo = join(opts.workDir, rawFile);
   if (!(await exists(rawVideo))) {
-    throw new Error(`No ${RAW_VIDEO_FILE} in ${opts.workDir} — run the record phase first`);
+    throw new Error(`No ${rawFile} in ${opts.workDir} — run the record phase first`);
   }
 
   const firstStep = manifest.steps[0];
@@ -58,14 +59,21 @@ export async function runPostPhase(
   // of frames of margin), or magenta frames leak into the output.
   const trimStartMs = Math.max(FLASH_MS + 200, firstStep.startMs - opts.leadInMs);
 
-  let videoOffsetMs = await detectFlashOffsetMs(rawVideo);
-  if (videoOffsetMs === null) {
-    logger.warn(
-      'calibration flash not found in recording — assuming video starts at clock zero; audio sync may drift by the context-creation gap',
-    );
+  let videoOffsetMs: number;
+  if (manifest.capture?.clockAligned) {
+    // Screencast capture: frames carry explicit timestamps; t=0 IS clock zero.
     videoOffsetMs = 0;
   } else {
-    logger.debug(`calibration flash at ${videoOffsetMs}ms into raw video`);
+    const detected = await detectFlashOffsetMs(rawVideo);
+    if (detected === null) {
+      logger.warn(
+        'calibration flash not found in recording — assuming video starts at clock zero; audio sync may drift by the context-creation gap',
+      );
+      videoOffsetMs = 0;
+    } else {
+      videoOffsetMs = detected;
+      logger.debug(`calibration flash at ${videoOffsetMs}ms into raw video`);
+    }
   }
   manifest.videoClockOffsetMs = videoOffsetMs;
 

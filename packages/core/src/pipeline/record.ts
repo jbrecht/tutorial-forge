@@ -1,6 +1,7 @@
 import { join } from 'node:path';
-import { writeFile, readFile, rename } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { createRecorder, type CaptureInfo, type RecorderKind } from './recorder.js';
 import type { CalloutRecord, FailureArtifacts, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { StepError } from '../types.js';
 import { ConsoleCapture } from '../browser/console.js';
@@ -30,6 +31,8 @@ export interface RecordPhaseOptions {
   leadInMs: number;
   /** Language being rendered; exposed to adapter and step callbacks via ctx. */
   lang?: string;
+  /** Capture implementation; default 'video'. */
+  recorder?: RecorderKind;
   /** Debug mode: Playwright trace, full console log, per-step screenshots. */
   debug?: boolean;
 }
@@ -45,19 +48,24 @@ export async function runRecordPhase(
   tts: TTSPhaseResult,
   opts: RecordPhaseOptions,
 ): Promise<TimingManifest> {
-  const videoDir = join(opts.workDir, 'video');
-  await ensureDir(videoDir);
+  await ensureDir(opts.workDir);
+  const recorder = createRecorder(opts.recorder ?? 'video', {
+    workDir: opts.workDir,
+    viewport: opts.viewport,
+    fps: 25,
+    keepFrames: opts.debug,
+  });
 
   const browser = await launchChromium(opts.headless);
   try {
-    // Playwright's screencast captures at CSS-viewport size and pads (never
-    // scales up) when recordVideo.size is larger, so record at viewport size.
+    // Capture happens at CSS-viewport size with either recorder (Chromium
+    // delivers screencast frames in DIP; recordVideo pads larger sizes).
     // deviceScaleFactor 2 still sharpens text: Chromium rasterizes at 2x and
     // downscales into the captured frame.
     const context = await browser.newContext({
       viewport: opts.viewport,
       deviceScaleFactor: 2,
-      recordVideo: { dir: videoDir, size: opts.viewport },
+      ...recorder.contextOptions(),
     });
     if (opts.cursor) await context.addInitScript(CURSOR_INIT_SCRIPT);
     if (opts.callouts || opts.cursor) await context.addInitScript(CALLOUT_INIT_SCRIPT);
@@ -68,26 +76,30 @@ export async function runRecordPhase(
     const page = await context.newPage();
     const consoleLog = new ConsoleCapture();
     consoleLog.attach(page);
+    await recorder.start(page);
     const clock = new RecordingClock();
 
-    // Clock zero + calibration flash: paint a magenta frame the post phase
-    // can find to align the manifest clock with the video's first frame.
     await page.goto('about:blank');
     await page.waitForTimeout(250);
     clock.zero();
-    await page.evaluate((ms) => {
-      document.documentElement.style.background = '#ff00ff';
-      return new Promise<void>((resolve) =>
-        setTimeout(() => {
-          document.documentElement.style.background = '';
-          resolve();
-        }, ms),
-      );
-    }, FLASH_MS);
-    // Keep the flash clear of the trim point even when setup is instant:
-    // post trims at steps[0].startMs - leadInMs, which without this hold can
-    // land inside the flash and leave magenta frames in the output.
-    await page.waitForTimeout(POST_FLASH_HOLD_MS);
+    if (recorder.needsCalibrationFlash) {
+      // Calibration flash: paint a magenta frame the post phase can find to
+      // align the manifest clock with the video's first frame. (Screencast
+      // capture has explicit frame timestamps and skips this entirely.)
+      await page.evaluate((ms) => {
+        document.documentElement.style.background = '#ff00ff';
+        return new Promise<void>((resolve) =>
+          setTimeout(() => {
+            document.documentElement.style.background = '';
+            resolve();
+          }, ms),
+        );
+      }, FLASH_MS);
+      // Keep the flash clear of the trim point even when setup is instant:
+      // post trims at steps[0].startMs - leadInMs, which without this hold
+      // can land inside the flash and leave magenta frames in the output.
+      await page.waitForTimeout(POST_FLASH_HOLD_MS);
+    }
 
     const ctx = { lang: opts.lang };
     logger.info(`record: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
@@ -158,7 +170,7 @@ export async function runRecordPhase(
     }
 
     await page.waitForTimeout(FINAL_HOLD_MS);
-    const manifest = await saveManifest(tutorial, clock, manifestSteps, opts.workDir, opts.lang);
+    const totalDurationMs = clock.now();
 
     if (adapter.teardown) {
       try {
@@ -174,12 +186,8 @@ export async function runRecordPhase(
       logger.info(`debug: console.log and trace.zip written to ${opts.workDir}`);
     }
 
-    const video = page.video();
-    await context.close(); // flushes the webm
-    if (!video) throw new Error('Playwright returned no video — recordVideo was not active');
-    await rename(await video.path(), join(opts.workDir, RAW_VIDEO_FILE));
-
-    return manifest;
+    const capture = await recorder.finalize(page, context, clock.zeroEpoch, totalDurationMs);
+    return saveManifest(tutorial, clock, manifestSteps, opts.workDir, opts.lang, capture, totalDurationMs);
   } finally {
     await safeClose(browser.close());
   }
@@ -200,14 +208,17 @@ async function saveManifest(
   steps: TimingManifest['steps'],
   workDir: string,
   lang?: string,
+  capture?: CaptureInfo,
+  totalDurationMs?: number,
 ): Promise<TimingManifest> {
   const manifest: TimingManifest = {
     tutorialId: tutorial.id,
     ...(lang ? { lang } : {}),
+    ...(capture ? { capture } : {}),
     fps: 25,
     recordingStartEpochMs: clock.zeroEpoch,
     steps,
-    totalDurationMs: clock.now(),
+    totalDurationMs: totalDurationMs ?? clock.now(),
   };
   await writeFile(join(workDir, MANIFEST_FILE), JSON.stringify(manifest, null, 2));
   return manifest;

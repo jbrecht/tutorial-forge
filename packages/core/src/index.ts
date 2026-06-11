@@ -20,6 +20,14 @@ export { defineConfig, validateConfig, type ForgeConfig } from './config.js';
 export { render, type RenderResult } from './pipeline/render.js';
 export { runTTSPhase, loadTTSResult } from './pipeline/tts.js';
 export { runRecordPhase, loadManifest, RAW_VIDEO_FILE, MANIFEST_FILE } from './pipeline/record.js';
+export {
+  createRecorder,
+  buildConcatList,
+  buildAssembleArgs,
+  type Recorder,
+  type RecorderKind,
+  type CaptureInfo,
+} from './pipeline/recorder.js';
 export { runPostPhase } from './pipeline/post.js';
 
 export { SilentProvider } from './tts/silent.js';

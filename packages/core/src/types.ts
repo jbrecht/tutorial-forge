@@ -95,6 +95,12 @@ export interface RenderOptions {
    */
   idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
   /**
+   * Capture implementation. 'video' (default) uses Playwright recordVideo
+   * with flash-based clock calibration; 'screencast' captures CDP frames with
+   * explicit timestamps (exact clock alignment, VFR-aware). Chromium only.
+   */
+  recorder?: 'video' | 'screencast';
+  /**
    * Debug mode: keep the work dir, record a Playwright trace (trace.zip),
    * write the full browser console log, and capture before/after screenshots
    * per step. Adds time per step; not for production renders.
@@ -132,6 +138,15 @@ export interface TimingManifest {
   tutorialId: string;
   /** Language this render used, if localized. */
   lang?: string;
+  /** How the raw video was captured. Absent in pre-0.8 manifests (recordVideo). */
+  capture?: {
+    recorder: 'video' | 'screencast';
+    rawFile: string;
+    width: number;
+    height: number;
+    /** t=0 of the raw file IS the recording clock's zero (no flash detection needed). */
+    clockAligned: boolean;
+  };
   fps: number;
   recordingStartEpochMs: number;
   /** Offset (ms) into the raw webm where the recording clock's zero falls, derived from the calibration flash. 0 if undetected. */

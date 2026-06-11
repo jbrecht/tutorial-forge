@@ -84,6 +84,15 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 
 **Idle speed-up:** pass `--idle-speedup` (or `idleSpeedup: true` / `{ maxIdleMs: 2000, speed: 3 }`) to fast-forward narration-free waits — spinners, slow loads, long silent steps. Narration playback and click choreography always stay at 1x; audio offsets and subtitle cues are remapped to the shortened timeline automatically.
 
+## Recorders
+
+Two capture implementations, selected with `--recorder` or `recorder:` in config:
+
+- **`video`** (default) — Playwright's `recordVideo`. The recording clock is aligned in post by detecting a calibration flash painted at the start.
+- **`screencast`** — CDP frame capture with explicit per-frame timestamps: exact clock alignment by construction (no flash), and frames only arrive when content changes. Chromium-only (which the pipeline already is).
+
+Output should be visually identical; screencast is the more precise mechanism and the likely future default.
+
 ## Debugging a failing tutorial
 
 When a step fails, the render throws a `StepError` naming the tutorial and step, the work dir is kept, and two artifacts are always written: a screenshot of the page at failure and the recent browser console/pageerror/requestfailed log.

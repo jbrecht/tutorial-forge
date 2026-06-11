@@ -1,6 +1,6 @@
 {
   "name": "tutorial-forge-cli",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "CLI for tutorial-forge: render scripted Playwright walkthroughs into narrated tutorial videos",
   "type": "module",
   "license": "MIT",

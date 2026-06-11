@@ -22,6 +22,8 @@ export interface RenderCmdOptions {
   gif?: boolean;
   /** GIF excerpt range ("step-id" or "from..to"). Implies --gif. */
   gifSteps?: string;
+  /** Capture implementation (overrides config.recorder). */
+  recorder?: string;
 }
 
 /** Merge --gif/--gif-steps flags with config.gif (flags win; --gif-steps implies --gif). */
@@ -32,6 +34,14 @@ function resolveGifOption(
   if (!opts.gif && !opts.gifSteps) return configGif;
   const base = typeof configGif === 'object' ? configGif : {};
   return opts.gifSteps ? { ...base, steps: opts.gifSteps } : { ...base };
+}
+
+function resolveRecorder(value: string | undefined): 'video' | 'screencast' | undefined {
+  if (value === undefined) return undefined;
+  if (value !== 'video' && value !== 'screencast') {
+    throw new Error(`Invalid --recorder "${value}" (expected video | screencast)`);
+  }
+  return value;
 }
 
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
@@ -79,6 +89,7 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         zoom: opts.zoom ?? config.zoom,
         idleSpeedup: opts.idleSpeedup ?? config.idleSpeedup,
         gif: resolveGifOption(opts, config.gif),
+        recorder: resolveRecorder(opts.recorder) ?? config.recorder,
         debug: opts.debug,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {

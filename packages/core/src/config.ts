@@ -32,6 +32,8 @@ export interface ForgeConfig {
   captionStyle?: { fontSizePx?: number; maxWidthPx?: number; bottomMarginPx?: number };
   /** Also export an animated GIF per tutorial (captioned by default). */
   gif?: boolean | { widthPx?: number; fps?: number; captions?: boolean; steps?: string };
+  /** Capture implementation: 'video' (default) or 'screencast' (exact clock alignment). */
+  recorder?: 'video' | 'screencast';
 }
 
 const configSchema = z.object({
@@ -90,6 +92,7 @@ const configSchema = z.object({
       }),
     ])
     .optional(),
+  recorder: z.enum(['video', 'screencast']).optional(),
 });
 
 export function defineConfig(config: ForgeConfig): ForgeConfig {
