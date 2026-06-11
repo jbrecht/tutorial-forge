@@ -74,6 +74,7 @@ try {
     keepWorkDir: true,
     ttsCacheDir: join(outDir, 'tts-cache'),
     lang: 'es',
+    zoom: true, // exercises the zoom-on-callout filter path
   });
   assert.ok(existsSync(esOutput), 'es output mp4 exists');
   assert.equal(esResult.manifest.lang, 'es', 'manifest records the language');

@@ -24,6 +24,8 @@ export interface ForgeConfig {
   defaultLang?: string;
   /** Per-language TTS provider override (e.g. a different voice per language). Falls back to tts. */
   ttsByLang?: Record<string, TTSProvider>;
+  /** Zoom toward click targets in post. true → factor 1.35. Default off. */
+  zoom?: boolean | { factor?: number };
 }
 
 const configSchema = z.object({
@@ -51,6 +53,9 @@ const configSchema = z.object({
   defaultLang: z.string().min(2).optional(),
   ttsByLang: z
     .record(z.object({ cacheKey: z.string().min(1), synthesize: z.function() }))
+    .optional(),
+  zoom: z
+    .union([z.boolean(), z.object({ factor: z.number().min(1).max(3).optional() })])
     .optional(),
 });
 

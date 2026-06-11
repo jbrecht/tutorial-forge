@@ -4,6 +4,7 @@ import type { TimingManifest } from '../types.js';
 import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
 import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
 import { generateSrt } from '../post/subtitles.js';
+import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
 import { ensureDir, exists } from '../util/fs.js';
 import { logger } from '../util/logger.js';
 
@@ -13,6 +14,7 @@ export interface PostPhaseOptions {
   viewport: { width: number; height: number };
   subtitles: 'burn' | 'sidecar' | 'off';
   leadInMs: number;
+  zoom?: boolean | { factor?: number };
 }
 
 export interface PostPhaseResult {
@@ -64,6 +66,15 @@ export async function runPostPhase(
     await writeFile(srtPath, srt);
   }
 
+  let zoomFilter: string | undefined;
+  if (opts.zoom) {
+    const factor = (typeof opts.zoom === 'object' && opts.zoom.factor) || DEFAULT_ZOOM_FACTOR;
+    const callouts = manifest.steps.flatMap((s) => s.callouts);
+    const windows = computeZoomWindows(callouts, trimStartMs, manifest.totalDurationMs);
+    zoomFilter = buildZoomFilter(windows, factor, opts.viewport.width, opts.viewport.height, manifest.fps) ?? undefined;
+    if (zoomFilter) logger.info(`post: zooming on ${windows.length} callout(s) (factor ${factor})`);
+  }
+
   const args = buildMergeArgs({
     rawVideo,
     manifest,
@@ -75,6 +86,7 @@ export async function runPostPhase(
     targetWidth: opts.viewport.width,
     targetHeight: opts.viewport.height,
     burnSrt: opts.subtitles === 'burn' && srtPath ? srtPath : undefined,
+    zoomFilter,
   });
   logger.info('post: merging audio + video (ffmpeg)');
   await runFfmpeg(args);

@@ -34,7 +34,7 @@ $ tutorial-forge render
   subtitles: tutorials/dist/getting-started.srt
 ```
 
-The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, or silent), browser driving, screen recording, narration-driven pacing, an animated fake cursor, click-highlight callouts, SRT subtitles, and the final FFmpeg merge.
+The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, or silent), browser driving, screen recording, narration-driven pacing, an animated fake cursor, click-highlight callouts, optional zoom toward click targets (`--zoom`), SRT subtitles, and the final FFmpeg merge.
 
 **Localization built in:** drop a `getting-started.tutorial.es.json` translation file next to the tutorial and run `tutorial-forge render --lang es` — same walkthrough, Spanish narration and subtitles, pacing re-derived from the actual Spanish speech. Every language your docs need, regenerated on every release. See [writing tutorials](docs/writing-tutorials.md#localization).
 

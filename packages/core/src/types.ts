@@ -79,6 +79,8 @@ export interface RenderOptions {
   lang?: string;
   /** The language the spec's narration strings are written in. Default 'en'. */
   defaultLang?: string;
+  /** Zoom toward click targets in post. true → factor 1.35. Default off. */
+  zoom?: boolean | { factor?: number };
 }
 
 export interface CalloutRecord {

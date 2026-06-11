@@ -78,6 +78,8 @@ tutorial-forge clean --cache            # remove work dirs and the TTS cache
 
 Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'burn'` to burn them in, `'off'` to skip).
 
+**Zoom-on-callout:** pass `--zoom` (or set `zoom: true` / `zoom: { factor: 1.5 }` in config) to smoothly zoom toward each click target and back out — the camera leads the click, holds through what it reveals, then releases. Composited in post from the timing manifest, so it adds nothing to recording time.
+
 ## CI
 
 The TTS cache (`~/.cache/tutorial-forge/tts` by default, configurable via `ttsCacheDir`) is content-hashed by provider + narration text — cache it in CI and unchanged narration lines never hit the TTS API. Headless rendering needs a sane font set in containers: install `fonts-liberation` and `fonts-noto-color-emoji`.

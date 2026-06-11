@@ -119,6 +119,8 @@ export interface MergeArgsInput {
   targetHeight: number;
   /** Burn this .srt into the video, if set. */
   burnSrt?: string;
+  /** Pre-built zoom stage (fps + zoompan) to insert after the trim; see post/zoom.ts. */
+  zoomFilter?: string;
 }
 
 /**
@@ -151,6 +153,7 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
     `trim=start=${videoTrimStartS}:end=${videoTrimEndS}`,
     'setpts=PTS-STARTPTS',
   ];
+  if (input.zoomFilter) vf.push(input.zoomFilter);
   vf.push(`scale=${input.targetWidth}:${input.targetHeight}:flags=lanczos`);
   if (input.burnSrt) {
     vf.push(`subtitles=${escapeFilterPath(input.burnSrt)}`);

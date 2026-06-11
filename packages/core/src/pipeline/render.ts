@@ -75,6 +75,7 @@ export async function render(
       viewport,
       subtitles: options.subtitles ?? 'sidecar',
       leadInMs,
+      zoom: options.zoom,
     });
 
     if (!(options.keepWorkDir ?? false)) {

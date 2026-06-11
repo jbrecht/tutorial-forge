@@ -40,3 +40,4 @@ export {
   type MergeArgsInput,
 } from './post/ffmpeg.js';
 export { stepHoldUntilMs } from './browser/timing.js';
+export { computeZoomWindows, buildZoomFilter, DEFAULT_ZOOM_FACTOR, type ZoomWindow } from './post/zoom.js';
