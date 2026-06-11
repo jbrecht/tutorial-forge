@@ -63,6 +63,7 @@ export async function render(
             callouts: options.callouts ?? true,
             leadInMs,
             lang,
+            debug: options.debug,
           })
         : await loadManifest(workDir);
     if (phase === 'record') {
@@ -78,7 +79,7 @@ export async function render(
       zoom: options.zoom,
     });
 
-    if (!(options.keepWorkDir ?? false)) {
+    if (!(options.keepWorkDir ?? options.debug ?? false)) {
       await removeDir(workDir);
     } else {
       logger.info(`work dir kept at ${workDir}`);

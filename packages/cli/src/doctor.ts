@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { ffmpegVersion } from 'tutorial-forge';
+import { ffmpegVersion, ffmpegHasFilter } from 'tutorial-forge';
 
 interface Check {
   name: string;
@@ -26,6 +26,17 @@ export async function doctorCommand(): Promise<void> {
   });
   const ffprobe = await ffmpegVersion('ffprobe');
   checks.push({ name: 'ffprobe', ok: !!ffprobe, detail: ffprobe ? `version ${ffprobe}` : 'not found on PATH' });
+
+  if (ffmpeg) {
+    const hasSubtitles = await ffmpegHasFilter('subtitles');
+    checks.push({
+      name: 'ffmpeg subtitles filter',
+      ok: true, // informational: only needed for subtitles: 'burn'
+      detail: hasSubtitles
+        ? 'available'
+        : "missing (built without libass) — subtitles: 'burn' unavailable; 'sidecar' works",
+    });
+  }
 
   try {
     const { chromium } = await import('playwright');

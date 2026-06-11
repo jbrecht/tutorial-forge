@@ -2,7 +2,7 @@ import { join, dirname, basename, extname } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import type { TimingManifest } from '../types.js';
 import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
-import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
+import { buildMergeArgs, detectFlashOffsetMs, ffmpegHasFilter, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
 import { generateSrt } from '../post/subtitles.js';
 import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
 import { ensureDir, exists } from '../util/fs.js';
@@ -35,6 +35,12 @@ export async function runPostPhase(
   const rawVideo = join(opts.workDir, RAW_VIDEO_FILE);
   if (!(await exists(rawVideo))) {
     throw new Error(`No ${RAW_VIDEO_FILE} in ${opts.workDir} — run the record phase first`);
+  }
+
+  if (opts.subtitles === 'burn' && !(await ffmpegHasFilter('subtitles'))) {
+    throw new Error(
+      "subtitles: 'burn' needs an ffmpeg built with libass (no 'subtitles' filter found — Homebrew's ffmpeg 8 dropped it). Use subtitles: 'sidecar', or install a full ffmpeg build.",
+    );
   }
 
   const firstStep = manifest.steps[0];

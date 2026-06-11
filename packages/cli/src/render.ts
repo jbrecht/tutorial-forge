@@ -14,6 +14,8 @@ export interface RenderCmdOptions {
   lang?: string;
   /** Enable zoom-on-callout (overrides config.zoom). */
   zoom?: boolean;
+  /** Debug mode: trace, console log, per-step screenshots, work dir kept. */
+  debug?: boolean;
 }
 
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
@@ -58,6 +60,7 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         lang: lang ?? undefined,
         defaultLang,
         zoom: opts.zoom ?? config.zoom,
+        debug: opts.debug,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {
         console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);

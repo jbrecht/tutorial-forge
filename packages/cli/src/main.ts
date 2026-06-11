@@ -20,7 +20,7 @@ if (existsSync(envFile)) {
 
 const program = new Command('tutorial-forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
-  .version('0.3.0');
+  .version('0.4.0');
 
 program
   .command('render')
@@ -35,6 +35,7 @@ program
   .option('--config <path>', 'path to forge.config.ts')
   .option('--lang <langs>', 'render these languages (comma-separated, e.g. "es,fr"); overrides config.languages')
   .option('--zoom', 'zoom toward click targets (overrides config.zoom)')
+  .option('--debug', 'keep work dir with Playwright trace, console log, per-step screenshots')
   .action(async (globs: string[], opts) => {
     if (!['tts', 'record', 'post', 'all'].includes(opts.phase)) {
       throw new Error(`Invalid --phase "${opts.phase}"`);

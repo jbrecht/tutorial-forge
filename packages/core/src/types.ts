@@ -81,6 +81,12 @@ export interface RenderOptions {
   defaultLang?: string;
   /** Zoom toward click targets in post. true → factor 1.35. Default off. */
   zoom?: boolean | { factor?: number };
+  /**
+   * Debug mode: keep the work dir, record a Playwright trace (trace.zip),
+   * write the full browser console log, and capture before/after screenshots
+   * per step. Adds time per step; not for production renders.
+   */
+  debug?: boolean;
 }
 
 export interface CalloutRecord {
@@ -121,16 +127,32 @@ export interface TimingManifest {
   totalDurationMs: number;
 }
 
+/** Diagnostic artifacts written when a step fails; all paths inside the kept work dir. */
+export interface FailureArtifacts {
+  /** Screenshot of the page at failure. */
+  screenshot: string | null;
+  /** Recent browser console + pageerror lines leading up to the failure. */
+  consoleLog: string | null;
+  /** Playwright trace (debug mode only) — open with `npx playwright show-trace`. */
+  trace: string | null;
+  workDir: string;
+}
+
 /** Thrown when a step's run()/waitFor() rejects during recording. */
 export class StepError extends Error {
   constructor(
     public readonly tutorialId: string,
     public readonly stepId: string,
     public override readonly cause: unknown,
+    public readonly artifacts?: FailureArtifacts,
   ) {
-    super(
+    const lines = [
       `Step "${stepId}" of tutorial "${tutorialId}" failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-    );
+    ];
+    if (artifacts?.screenshot) lines.push(`  screenshot: ${artifacts.screenshot}`);
+    if (artifacts?.consoleLog) lines.push(`  console:    ${artifacts.consoleLog}`);
+    if (artifacts?.trace) lines.push(`  trace:      ${artifacts.trace} (npx playwright show-trace)`);
+    super(lines.join('\n'));
     this.name = 'StepError';
   }
 }

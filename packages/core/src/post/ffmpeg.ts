@@ -29,6 +29,16 @@ export async function ffmpegVersion(bin: 'ffmpeg' | 'ffprobe' = 'ffmpeg'): Promi
   }
 }
 
+/** Whether this ffmpeg build includes a filter (e.g. 'subtitles' requires libass). */
+export async function ffmpegHasFilter(name: string): Promise<boolean> {
+  try {
+    const { stdout } = await execa('ffmpeg', ['-hide_banner', '-filters']);
+    return new RegExp(`\\s${name}\\s`).test(stdout);
+  } catch {
+    return false;
+  }
+}
+
 /** Exact media duration in milliseconds, via ffprobe. */
 export async function probeDurationMs(file: string): Promise<number> {
   const out = await run('ffprobe', [

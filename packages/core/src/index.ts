@@ -11,7 +11,7 @@ export type {
   ManifestStep,
   CalloutRecord,
 } from './types.js';
-export { StepError } from './types.js';
+export { StepError, type FailureArtifacts } from './types.js';
 
 export { tutorial, step, validateTutorial, stepId } from './spec.js';
 export { localizeTutorial, availableLanguages } from './i18n.js';
@@ -37,6 +37,7 @@ export {
   parseFlashFromMetadata,
   normalizeToWav,
   ffmpegVersion,
+  ffmpegHasFilter,
   type MergeArgsInput,
 } from './post/ffmpeg.js';
 export { stepHoldUntilMs } from './browser/timing.js';

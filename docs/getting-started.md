@@ -80,6 +80,18 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 
 **Zoom-on-callout:** pass `--zoom` (or set `zoom: true` / `zoom: { factor: 1.5 }` in config) to smoothly zoom toward each click target and back out — the camera leads the click, holds through what it reveals, then releases. Composited in post from the timing manifest, so it adds nothing to recording time.
 
+## Debugging a failing tutorial
+
+When a step fails, the render throws a `StepError` naming the tutorial and step, the work dir is kept, and two artifacts are always written: a screenshot of the page at failure and the recent browser console/pageerror/requestfailed log.
+
+For real investigation, re-run with `--debug`:
+
+```sh
+tutorial-forge render --only my-tutorial --debug
+```
+
+Debug mode additionally records a full Playwright trace (`trace.zip` — open with `npx playwright show-trace`), writes the complete console log, and captures before/after screenshots for every step under `.forge/<id>/steps/`. Debug renders are slower and not for production output.
+
 ## CI
 
 The TTS cache (`~/.cache/tutorial-forge/tts` by default, configurable via `ttsCacheDir`) is content-hashed by provider + narration text — cache it in CI and unchanged narration lines never hit the TTS API. Headless rendering needs a sane font set in containers: install `fonts-liberation` and `fonts-noto-color-emoji`.

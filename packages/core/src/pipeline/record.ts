@@ -1,8 +1,9 @@
 import { join } from 'node:path';
 import { writeFile, readFile, rename } from 'node:fs/promises';
-import { chromium, type Browser, type Page } from 'playwright';
-import type { CalloutRecord, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import type { CalloutRecord, FailureArtifacts, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { StepError } from '../types.js';
+import { ConsoleCapture } from '../browser/console.js';
 import { stepId } from '../spec.js';
 import type { TTSPhaseResult } from './tts.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
@@ -29,6 +30,8 @@ export interface RecordPhaseOptions {
   leadInMs: number;
   /** Language being rendered; exposed to adapter and step callbacks via ctx. */
   lang?: string;
+  /** Debug mode: Playwright trace, full console log, per-step screenshots. */
+  debug?: boolean;
 }
 
 /**
@@ -58,8 +61,13 @@ export async function runRecordPhase(
     });
     if (opts.cursor) await context.addInitScript(CURSOR_INIT_SCRIPT);
     if (opts.callouts || opts.cursor) await context.addInitScript(CALLOUT_INIT_SCRIPT);
+    if (opts.debug) {
+      await context.tracing.start({ screenshots: true, snapshots: true });
+    }
 
     const page = await context.newPage();
+    const consoleLog = new ConsoleCapture();
+    consoleLog.attach(page);
     const clock = new RecordingClock();
 
     // Clock zero + calibration flash: paint a magenta frame the post phase
@@ -109,19 +117,22 @@ export async function runRecordPhase(
 
       const startMs = clock.now();
       logger.info(`record: step ${i + 1}/${tutorial.steps.length} "${id}"`);
+      consoleLog.mark(`step ${i + 1} "${id}"`);
       await page.waitForTimeout(opts.leadInMs);
 
+      if (opts.debug) await debugScreenshot(page, opts.workDir, `${id}-before`);
       const actionStartMs = clock.now();
       try {
         await step.run(instrumented as Page, ctx);
         await step.waitFor?.(instrumented as Page, ctx);
       } catch (cause) {
-        await captureFailure(page, opts.workDir, id);
+        const artifacts = await captureFailure(page, context, opts, id, consoleLog);
         await saveManifest(tutorial, clock, manifestSteps, opts.workDir, opts.lang);
         await safeClose(context.close());
-        throw new StepError(tutorial.id, id, cause);
+        throw new StepError(tutorial.id, id, cause, artifacts);
       }
       const actionEndMs = clock.now();
+      if (opts.debug) await debugScreenshot(page, opts.workDir, `${id}-after`);
 
       const holdUntil = stepHoldUntilMs({
         startMs,
@@ -155,6 +166,12 @@ export async function runRecordPhase(
       } catch (err) {
         logger.warn(`teardown failed (ignored): ${err instanceof Error ? err.message : err}`);
       }
+    }
+
+    if (opts.debug) {
+      await writeFile(join(opts.workDir, 'console.log'), consoleLog.all().join('\n') + '\n');
+      await stopTracing(context, join(opts.workDir, 'trace.zip'));
+      logger.info(`debug: console.log and trace.zip written to ${opts.workDir}`);
     }
 
     const video = page.video();
@@ -196,12 +213,56 @@ async function saveManifest(
   return manifest;
 }
 
-async function captureFailure(page: Page, workDir: string, id: string): Promise<void> {
+async function captureFailure(
+  page: Page,
+  context: BrowserContext,
+  opts: RecordPhaseOptions,
+  id: string,
+  consoleLog: ConsoleCapture,
+): Promise<FailureArtifacts> {
+  const artifacts: FailureArtifacts = {
+    screenshot: null,
+    consoleLog: null,
+    trace: null,
+    workDir: opts.workDir,
+  };
   try {
-    await page.screenshot({ path: join(workDir, `failure-${id}.png`) });
-    logger.error(`record: step "${id}" failed — screenshot at ${join(workDir, `failure-${id}.png`)}`);
+    const path = join(opts.workDir, `failure-${id}.png`);
+    await page.screenshot({ path });
+    artifacts.screenshot = path;
   } catch {
     /* page may already be unusable */
+  }
+  try {
+    const path = join(opts.workDir, `failure-${id}-console.log`);
+    await writeFile(path, consoleLog.recent().join('\n') + '\n');
+    artifacts.consoleLog = path;
+  } catch {
+    /* best effort */
+  }
+  if (opts.debug) {
+    const path = join(opts.workDir, 'trace.zip');
+    if (await stopTracing(context, path)) artifacts.trace = path;
+  }
+  logger.error(`record: step "${id}" failed — artifacts in ${opts.workDir}`);
+  return artifacts;
+}
+
+async function debugScreenshot(page: Page, workDir: string, name: string): Promise<void> {
+  try {
+    await ensureDir(join(workDir, 'steps'));
+    await page.screenshot({ path: join(workDir, 'steps', `${name}.png`) });
+  } catch {
+    /* never let diagnostics break the render */
+  }
+}
+
+async function stopTracing(context: BrowserContext, path: string): Promise<boolean> {
+  try {
+    await context.tracing.stop({ path });
+    return true;
+  } catch {
+    return false;
   }
 }
 
