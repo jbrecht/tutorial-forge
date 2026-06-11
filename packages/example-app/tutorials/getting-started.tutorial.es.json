@@ -1,0 +1,10 @@
+{
+  "welcome": "Bienvenido a Lumen Events. En este breve recorrido, crearemos tu primer evento y ajustaremos una configuración del espacio de trabajo.",
+  "open-events": "Desde el panel principal, abre la página de Eventos usando la barra de navegación.",
+  "open-modal": "Para añadir un evento, haz clic en el botón Nuevo evento. Se abre un diálogo donde puedes completar los detalles.",
+  "fill-name": "Dale al evento un nombre descriptivo. Esto es lo que verán los asistentes en sus invitaciones.",
+  "pick-type": "Luego elige el tipo de evento que mejor se ajuste al formato.",
+  "create-event": "Haz clic en Crear evento. Guardar tarda un momento, y el nuevo evento aparece en la lista como borrador.",
+  "settings": "Por último, visita Configuración para controlar los recordatorios y la visibilidad. Aquí activamos las páginas públicas de eventos.",
+  "wrap-up": "Eso es todo. Tu evento está creado, tu espacio de trabajo está configurado y ya puedes invitar a los asistentes."
+}

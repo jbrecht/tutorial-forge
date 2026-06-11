@@ -10,6 +10,8 @@ export async function listCommand(globs: string[], opts: { config?: string }): P
     return;
   }
   for (const { tutorial, file } of discovered) {
-    console.log(`${tutorial.id}  "${tutorial.title}"  ${tutorial.steps.length} steps  (${file})`);
+    const langs = Object.keys(tutorial.translations ?? {});
+    const langInfo = langs.length ? `  [+${langs.join(', +')}]` : '';
+    console.log(`${tutorial.id}  "${tutorial.title}"  ${tutorial.steps.length} steps${langInfo}  (${file})`);
   }
 }

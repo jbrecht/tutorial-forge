@@ -10,6 +10,8 @@ export interface RenderCmdOptions {
   outDir?: string;
   concurrency?: string;
   config?: string;
+  /** Comma-separated language list, e.g. "es,fr". Overrides config.languages. */
+  lang?: string;
 }
 
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
@@ -27,28 +29,39 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
   }
 
   const outDir = resolve(cwd, opts.outDir ?? config.outDir ?? 'tutorials/dist');
+  const defaultLang = config.defaultLang ?? 'en';
+  // null = source language with no suffix (the pre-localization behavior).
+  const langs: Array<string | null> =
+    opts.lang?.split(',').map((l) => l.trim()).filter(Boolean) ?? config.languages ?? [null];
+
   for (const { tutorial } of discovered) {
-    console.log(`\n▶ ${tutorial.id} — ${tutorial.title} (${tutorial.steps.length} steps)`);
-    const result = await render(tutorial, config.adapter, {
-      tts: config.tts,
-      output: join(outDir, `${tutorial.id}.mp4`),
-      workDir: join(cwd, '.forge', tutorial.id),
-      viewport: config.viewport,
-      headless: opts.headed ? false : config.headless ?? true,
-      cursor: config.cursor,
-      callouts: config.callouts,
-      subtitles: config.subtitles,
-      leadInMs: config.leadInMs,
-      keepWorkDir: opts.keepWork ?? config.keepWorkDir,
-      ttsCacheDir: config.ttsCacheDir,
-      ttsConcurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : config.ttsConcurrency,
-      phase: opts.phase,
-    });
-    if (opts.phase === 'all' || opts.phase === 'post') {
-      console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
-      if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
-    } else {
-      console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
+    for (const lang of langs) {
+      const suffix = lang ? `.${lang}` : '';
+      const label = lang ? ` [${lang}]` : '';
+      console.log(`\n▶ ${tutorial.id}${label} — ${tutorial.title} (${tutorial.steps.length} steps)`);
+      const result = await render(tutorial, config.adapter, {
+        tts: (lang && config.ttsByLang?.[lang]) || config.tts,
+        output: join(outDir, `${tutorial.id}${suffix}.mp4`),
+        workDir: join(cwd, '.forge', `${tutorial.id}${suffix}`),
+        viewport: config.viewport,
+        headless: opts.headed ? false : config.headless ?? true,
+        cursor: config.cursor,
+        callouts: config.callouts,
+        subtitles: config.subtitles,
+        leadInMs: config.leadInMs,
+        keepWorkDir: opts.keepWork ?? config.keepWorkDir,
+        ttsCacheDir: config.ttsCacheDir,
+        ttsConcurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : config.ttsConcurrency,
+        phase: opts.phase,
+        lang: lang ?? undefined,
+        defaultLang,
+      });
+      if (opts.phase === 'all' || opts.phase === 'post') {
+        console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
+        if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
+      } else {
+        console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
+      }
     }
   }
 }

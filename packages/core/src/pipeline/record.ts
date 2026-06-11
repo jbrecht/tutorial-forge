@@ -24,6 +24,8 @@ export interface RecordPhaseOptions {
   cursor: boolean;
   callouts: boolean;
   leadInMs: number;
+  /** Language being rendered; exposed to adapter and step callbacks via ctx. */
+  lang?: string;
 }
 
 /**
@@ -72,8 +74,9 @@ export async function runRecordPhase(
       );
     }, FLASH_MS);
 
-    logger.info(`record: setup (${adapter.baseURL})`);
-    await adapter.setup(page);
+    const ctx = { lang: opts.lang };
+    logger.info(`record: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
+    await adapter.setup(page, ctx);
 
     const callouts: CalloutRecord[][] = tutorial.steps.map(() => []);
     let currentStep = 0;
@@ -100,11 +103,11 @@ export async function runRecordPhase(
 
       const actionStartMs = clock.now();
       try {
-        await step.run(instrumented as Page);
-        await step.waitFor?.(instrumented as Page);
+        await step.run(instrumented as Page, ctx);
+        await step.waitFor?.(instrumented as Page, ctx);
       } catch (cause) {
         await captureFailure(page, opts.workDir, id);
-        await saveManifest(tutorial, clock, manifestSteps, opts.workDir);
+        await saveManifest(tutorial, clock, manifestSteps, opts.workDir, opts.lang);
         await safeClose(context.close());
         throw new StepError(tutorial.id, id, cause);
       }
@@ -134,11 +137,11 @@ export async function runRecordPhase(
     }
 
     await page.waitForTimeout(FINAL_HOLD_MS);
-    const manifest = await saveManifest(tutorial, clock, manifestSteps, opts.workDir);
+    const manifest = await saveManifest(tutorial, clock, manifestSteps, opts.workDir, opts.lang);
 
     if (adapter.teardown) {
       try {
-        await adapter.teardown(page);
+        await adapter.teardown(page, ctx);
       } catch (err) {
         logger.warn(`teardown failed (ignored): ${err instanceof Error ? err.message : err}`);
       }
@@ -169,9 +172,11 @@ async function saveManifest(
   clock: RecordingClock,
   steps: TimingManifest['steps'],
   workDir: string,
+  lang?: string,
 ): Promise<TimingManifest> {
   const manifest: TimingManifest = {
     tutorialId: tutorial.id,
+    ...(lang ? { lang } : {}),
     fps: 25,
     recordingStartEpochMs: clock.zeroEpoch,
     steps,

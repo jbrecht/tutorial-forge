@@ -18,6 +18,12 @@ export interface ForgeConfig {
   keepWorkDir?: boolean;
   ttsCacheDir?: string;
   ttsConcurrency?: number;
+  /** Languages rendered by default (overridable with --lang). Omit for source-language only. */
+  languages?: string[];
+  /** The language tutorial narration is written in. Default 'en'. */
+  defaultLang?: string;
+  /** Per-language TTS provider override (e.g. a different voice per language). Falls back to tts. */
+  ttsByLang?: Record<string, TTSProvider>;
 }
 
 const configSchema = z.object({
@@ -41,6 +47,11 @@ const configSchema = z.object({
   keepWorkDir: z.boolean().optional(),
   ttsCacheDir: z.string().optional(),
   ttsConcurrency: z.number().int().positive().optional(),
+  languages: z.array(z.string().min(2)).optional(),
+  defaultLang: z.string().min(2).optional(),
+  ttsByLang: z
+    .record(z.object({ cacheKey: z.string().min(1), synthesize: z.function() }))
+    .optional(),
 });
 
 export function defineConfig(config: ForgeConfig): ForgeConfig {

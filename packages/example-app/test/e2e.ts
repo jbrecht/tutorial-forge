@@ -55,6 +55,27 @@ try {
   assert.ok(result.videoClockOffsetMs > 0, 'calibration flash was detected');
 
   console.log(`\ne2e OK: ${output} (${(actualMs / 1000).toFixed(1)}s, offset ${result.videoClockOffsetMs}ms, ${narratedSteps} cues)`);
+
+  // Localized render: load the Spanish sidecar the way the CLI would and
+  // verify the pipeline produces a Spanish video + subtitles.
+  gettingStarted.translations = {
+    es: JSON.parse(readFileSync(join(here, '..', 'tutorials', 'getting-started.tutorial.es.json'), 'utf8')),
+  };
+  const esOutput = join(outDir, 'getting-started.es.mp4');
+  const esResult = await render(gettingStarted, adapter, {
+    tts: SilentProvider(),
+    output: esOutput,
+    workDir: join(outDir, 'work-es'),
+    keepWorkDir: true,
+    ttsCacheDir: join(outDir, 'tts-cache'),
+    lang: 'es',
+  });
+  assert.ok(existsSync(esOutput), 'es output mp4 exists');
+  assert.equal(esResult.manifest.lang, 'es', 'manifest records the language');
+  const esSrt = readFileSync(esResult.srtPath!, 'utf8');
+  assert.ok(esSrt.includes('Bienvenido a Lumen Events'), 'es srt contains Spanish narration');
+  assert.ok(!esSrt.includes('Welcome to Lumen Events'), 'es srt contains no source narration');
+  console.log(`e2e OK [es]: ${esOutput} (${(esResult.outputDurationMs / 1000).toFixed(1)}s)`);
 } finally {
   await close();
 }

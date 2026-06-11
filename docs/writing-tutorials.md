@@ -51,6 +51,50 @@ Narration drives pacing. The pipeline synthesizes and measures every narration c
 
 Every render writes `manifest.json` describing the full timeline (per-step start/end, action windows, audio durations, callout boxes). It is the contract between the record and post phases and a debugging gold mine — run with `--keep-work` to keep it on success.
 
+## Localization
+
+A tutorial renders in any number of languages from one spec. Put translations in a sidecar JSON file next to the tutorial, keyed by step id:
+
+```
+tutorials/
+├── getting-started.tutorial.ts
+├── getting-started.tutorial.es.json
+└── getting-started.tutorial.fr.json
+```
+
+```json
+{
+  "welcome": "Bienvenido a Lumen Events. En este breve recorrido…",
+  "open-events": "Desde el panel principal, abre la página de Eventos…"
+}
+```
+
+Then render with `tutorial-forge render --lang es,fr` (or set `languages: ['es', 'fr']` in config to make it the default). Each language is a full pipeline run — narration is re-synthesized and re-measured, so pacing adapts to each language's actual speech duration — and outputs land as `<id>.<lang>.mp4` + `<id>.<lang>.srt`. The TTS cache partitions by provider + voice + text, so each translated line is synthesized once, ever.
+
+Give steps **explicit ids** when using translations: tables are keyed by id, so `step-03` style auto-ids break when you reorder steps.
+
+Missing entries fall back to the source narration with a warning; a language with no sidecar at all is an error. `tutorial-forge list` shows each tutorial's available languages.
+
+### Localized apps
+
+If the app itself is localized, your selectors and setup need the language too. Every adapter and step callback receives a context as its second argument:
+
+```ts
+export const adapter: TutorialAdapter = {
+  baseURL,
+  async setup(page, ctx) {
+    await page.goto(`${baseURL}/${ctx.lang ?? 'en'}`);
+  },
+};
+
+step('…', async (page, ctx) => {
+  // Prefer locale-independent selectors (test ids, roles without names)
+  await page.getByTestId('new-event').click();
+});
+```
+
+Per-language voices: set `ttsByLang` in config (`{ es: ElevenLabs({ voiceId: '…' }) }`); languages without an entry use the main `tts` provider. ElevenLabs' multilingual models speak most languages with the same voice, so often no override is needed.
+
 ## Validation
 
 `tutorial()` validates at load time — before any browser launches: non-empty steps, unique step ids, and narration free of markup/control characters (warning only). Errors include the step index.

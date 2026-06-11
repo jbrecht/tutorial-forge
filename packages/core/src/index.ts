@@ -3,6 +3,7 @@
 export type {
   Tutorial,
   Step,
+  StepContext,
   TutorialAdapter,
   TTSProvider,
   RenderOptions,
@@ -13,6 +14,7 @@ export type {
 export { StepError } from './types.js';
 
 export { tutorial, step, validateTutorial, stepId } from './spec.js';
+export { localizeTutorial, availableLanguages } from './i18n.js';
 export { defineConfig, validateConfig, type ForgeConfig } from './config.js';
 
 export { render, type RenderResult } from './pipeline/render.js';

@@ -20,7 +20,7 @@ if (existsSync(envFile)) {
 
 const program = new Command('tutorial-forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
-  .version('0.1.1');
+  .version('0.2.0');
 
 program
   .command('render')
@@ -33,6 +33,7 @@ program
   .option('--out-dir <dir>', 'output directory (overrides config)')
   .option('--concurrency <n>', 'TTS synthesis concurrency')
   .option('--config <path>', 'path to forge.config.ts')
+  .option('--lang <langs>', 'render these languages (comma-separated, e.g. "es,fr"); overrides config.languages')
   .action(async (globs: string[], opts) => {
     if (!['tts', 'record', 'post', 'all'].includes(opts.phase)) {
       throw new Error(`Invalid --phase "${opts.phase}"`);

@@ -1,24 +1,30 @@
 import type { Page } from 'playwright';
 
+/** Passed to adapter and step callbacks; lets app code react to the render language. */
+export interface StepContext {
+  /** The language being rendered (from RenderOptions.lang / --lang), if any. */
+  lang?: string;
+}
+
 /** Gets the target app into a known, recordable state. The only app-specific code. */
 export interface TutorialAdapter {
   /** Base URL of the running app, e.g. http://localhost:3000 */
   baseURL: string;
   /** Auth, seeding, navigation to a starting screen. Runs after page creation, before step 1. Excluded from the final video by default. */
-  setup(page: Page): Promise<void>;
+  setup(page: Page, ctx: StepContext): Promise<void>;
   /** Optional cleanup after recording (delete seeded data, logout). Never recorded. */
-  teardown?(page: Page): Promise<void>;
+  teardown?(page: Page, ctx: StepContext): Promise<void>;
 }
 
 export interface Step {
-  /** Stable id, auto-derived from index if omitted. Used in manifest, cache keys, logs. */
+  /** Stable id, auto-derived from index if omitted. Used in manifest, cache keys, logs, translation tables. */
   id?: string;
-  /** The narration line spoken over this step. Plain text; may be ''. */
+  /** The narration line spoken over this step, in the source language. Plain text; may be ''. */
   narration: string;
   /** The action. Receives the raw Playwright Page. May be a no-op for pure-narration steps. */
-  run: (page: Page) => Promise<void>;
+  run: (page: Page, ctx: StepContext) => Promise<void>;
   /** Optional readiness hook awaited after run(); use when auto-waiting isn't enough. */
-  waitFor?: (page: Page) => Promise<void>;
+  waitFor?: (page: Page, ctx: StepContext) => Promise<void>;
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
 }
@@ -29,6 +35,11 @@ export interface Tutorial {
   title: string;
   description?: string;
   steps: Step[];
+  /**
+   * Per-language narration overrides: lang → (step id → translated line).
+   * Usually loaded from sidecar files (<tutorial-file>.<lang>.json) by the CLI.
+   */
+  translations?: Record<string, Record<string, string>>;
 }
 
 export interface TTSProvider {
@@ -64,6 +75,10 @@ export interface RenderOptions {
   ttsConcurrency?: number;
   /** Which phases to run. Default 'all'. */
   phase?: 'tts' | 'record' | 'post' | 'all';
+  /** Render this language: narration comes from tutorial.translations[lang] and ctx.lang is set. */
+  lang?: string;
+  /** The language the spec's narration strings are written in. Default 'en'. */
+  defaultLang?: string;
 }
 
 export interface CalloutRecord {
@@ -94,6 +109,8 @@ export interface ManifestStep {
 /** Written to workDir as manifest.json; the contract between record and post phases. */
 export interface TimingManifest {
   tutorialId: string;
+  /** Language this render used, if localized. */
+  lang?: string;
   fps: number;
   recordingStartEpochMs: number;
   /** Offset (ms) into the raw webm where the recording clock's zero falls, derived from the calibration flash. 0 if undetected. */

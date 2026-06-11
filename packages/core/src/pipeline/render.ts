@@ -1,6 +1,7 @@
 import { resolve, join } from 'node:path';
 import type { RenderOptions, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { validateTutorial } from '../spec.js';
+import { localizeTutorial } from '../i18n.js';
 import { runTTSPhase, loadTTSResult } from './tts.js';
 import { runRecordPhase, loadManifest } from './record.js';
 import { runPostPhase, type PostPhaseResult } from './post.js';
@@ -24,8 +25,14 @@ export async function render(
   options: RenderOptions,
 ): Promise<RenderResult> {
   validateTutorial(tutorial);
+  const lang = options.lang;
+  if (lang) {
+    tutorial = localizeTutorial(tutorial, lang, options.defaultLang ?? 'en');
+  }
 
-  const workDir = resolve(options.workDir ?? join('.forge', tutorial.id));
+  const workDir = resolve(
+    options.workDir ?? join('.forge', lang ? `${tutorial.id}.${lang}` : tutorial.id),
+  );
   const output = resolve(options.output);
   const viewport = options.viewport ?? { width: 1920, height: 1080 };
   const leadInMs = options.leadInMs ?? 300;
@@ -55,6 +62,7 @@ export async function render(
             cursor: options.cursor ?? true,
             callouts: options.callouts ?? true,
             leadInMs,
+            lang,
           })
         : await loadManifest(workDir);
     if (phase === 'record') {
