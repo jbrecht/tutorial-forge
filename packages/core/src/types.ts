@@ -63,8 +63,10 @@ export interface RenderOptions {
   cursor?: boolean;
   /** Highlight clicked elements, default true */
   callouts?: boolean;
-  /** Default 'sidecar' (writes .srt next to mp4) */
+  /** Default 'sidecar' (writes .srt next to mp4). 'burn' composites browser-rendered caption pills. */
   subtitles?: 'burn' | 'sidecar' | 'off';
+  /** Styling for burned-in captions. */
+  captionStyle?: { fontSizePx?: number; maxWidthPx?: number; bottomMarginPx?: number };
   /** Silence before step narration starts, default 300 */
   leadInMs?: number;
   /** Default false on success, true on failure */

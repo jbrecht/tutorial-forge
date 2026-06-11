@@ -5,28 +5,44 @@ import type { TimingManifest } from '../types.js';
  * window. Cue times are relative to the trimmed video, so trimStartMs (manifest
  * clock) is subtracted.
  */
-export function generateSrt(
-  manifest: TimingManifest,
-  opts: {
-    leadInMs: number;
-    trimStartMs: number;
-    maxLineChars?: number;
-    /** Optional retime map (idle speed-up): trimmed-timeline ms → output ms. */
-    mapMs?: (ms: number) => number;
-  },
-): string {
-  const max = opts.maxLineChars ?? 42;
+export interface Cue {
+  text: string;
+  /** Output-timeline ms (post trim and retime). */
+  startMs: number;
+  endMs: number;
+}
+
+export interface CueOptions {
+  leadInMs: number;
+  trimStartMs: number;
+  /** Optional retime map (idle speed-up): trimmed-timeline ms → output ms. */
+  mapMs?: (ms: number) => number;
+}
+
+/** One cue per narrated step, on the final output timeline. Shared by SRT and burned captions. */
+export function computeCues(manifest: TimingManifest, opts: CueOptions): Cue[] {
   const mapMs = opts.mapMs ?? ((ms: number) => ms);
-  const cues: string[] = [];
-  let n = 0;
+  const cues: Cue[] = [];
   for (const step of manifest.steps) {
     if (!step.narration.trim() || step.audioDurationMs <= 0) continue;
-    n += 1;
-    const start = mapMs(step.startMs + opts.leadInMs - opts.trimStartMs);
-    const end = start + step.audioDurationMs; // narration spans play at 1x
-    cues.push(`${n}\n${srtTime(start)} --> ${srtTime(end)}\n${wrapText(step.narration, max)}\n`);
+    const startMs = mapMs(step.startMs + opts.leadInMs - opts.trimStartMs);
+    cues.push({
+      text: step.narration,
+      startMs,
+      endMs: startMs + step.audioDurationMs, // narration spans play at 1x
+    });
   }
-  return cues.join('\n');
+  return cues;
+}
+
+export function generateSrt(
+  manifest: TimingManifest,
+  opts: CueOptions & { maxLineChars?: number },
+): string {
+  const max = opts.maxLineChars ?? 42;
+  return computeCues(manifest, opts)
+    .map((cue, i) => `${i + 1}\n${srtTime(cue.startMs)} --> ${srtTime(cue.endMs)}\n${wrapText(cue.text, max)}\n`)
+    .join('\n');
 }
 
 export function srtTime(ms: number): string {

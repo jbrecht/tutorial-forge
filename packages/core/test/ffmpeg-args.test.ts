@@ -78,10 +78,24 @@ describe('buildMergeArgs', () => {
     expect(filter).toContain('acopy');
   });
 
-  it('burns subtitles when requested, with escaped path', () => {
-    const args = argsFor({ burnSrt: '/out/t.srt' });
+  it('composites burned captions after scale with enable windows', () => {
+    const args = argsFor({
+      captions: {
+        items: [
+          { file: '/cap/cue-01.png', startMs: 600, endMs: 2600 },
+          { file: '/cap/cue-02.png', startMs: 4100, endMs: 5100 },
+        ],
+        bottomMarginPx: 24,
+      },
+    });
+    const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
+    expect(inputs).toEqual(['/work/raw.webm', '/audio/a.wav', '/audio/c.wav', '/cap/cue-01.png', '/cap/cue-02.png']);
     const filter = args[args.indexOf('-filter_complex') + 1]!;
-    expect(filter).toContain("subtitles='/out/t.srt'");
+    // caption inputs follow the two audio inputs → indices 3 and 4
+    expect(filter).toContain("[vbase][3:v]overlay=(W-w)/2:H-h-24:enable='between(t,0.600,2.600)'[vcap0]");
+    expect(filter).toContain("[vcap0][4:v]overlay=(W-w)/2:H-h-24:enable='between(t,4.100,5.100)'[vout]");
+    // overlays come after scale so zoom/scale never distort the captions
+    expect(filter.indexOf('scale=')).toBeLessThan(filter.indexOf('overlay='));
   });
 });
 

@@ -76,7 +76,7 @@ tutorial-forge render --phase post      # re-merge without re-recording (uses .f
 tutorial-forge clean --cache            # remove work dirs and the TTS cache
 ```
 
-Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'burn'` to burn them in, `'off'` to skip).
+Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'burn'` to burn them in, `'off'` to skip). Burned captions are rendered by the browser and composited with ffmpeg's built-in overlay filter — no libass needed, works on any ffmpeg build, and styles via `captionStyle: { fontSizePx, maxWidthPx, bottomMarginPx }` in config.
 
 **Zoom-on-callout:** pass `--zoom` (or set `zoom: true` / `zoom: { factor: 1.5 }` in config) to smoothly zoom toward each click target and back out — the camera leads the click, holds through what it reveals, then releases. Composited in post from the timing manifest, so it adds nothing to recording time.
 

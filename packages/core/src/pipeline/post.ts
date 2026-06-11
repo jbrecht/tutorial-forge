@@ -2,8 +2,9 @@ import { join, dirname, basename, extname } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import type { TimingManifest } from '../types.js';
 import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
-import { buildMergeArgs, detectFlashOffsetMs, ffmpegHasFilter, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
-import { generateSrt } from '../post/subtitles.js';
+import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
+import { computeCues, generateSrt } from '../post/subtitles.js';
+import { DEFAULT_CAPTION_STYLE, renderCaptionImages, type CaptionImage } from '../post/captions.js';
 import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
 import {
   buildRetimeFilter,
@@ -23,6 +24,8 @@ export interface PostPhaseOptions {
   leadInMs: number;
   zoom?: boolean | { factor?: number };
   idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
+  /** Styling for burned-in captions (subtitles: 'burn'). */
+  captionStyle?: Partial<typeof DEFAULT_CAPTION_STYLE>;
 }
 
 export interface PostPhaseResult {
@@ -43,12 +46,6 @@ export async function runPostPhase(
   const rawVideo = join(opts.workDir, RAW_VIDEO_FILE);
   if (!(await exists(rawVideo))) {
     throw new Error(`No ${RAW_VIDEO_FILE} in ${opts.workDir} — run the record phase first`);
-  }
-
-  if (opts.subtitles === 'burn' && !(await ffmpegHasFilter('subtitles'))) {
-    throw new Error(
-      "subtitles: 'burn' needs an ffmpeg built with libass (no 'subtitles' filter found — Homebrew's ffmpeg 8 dropped it). Use subtitles: 'sidecar', or install a full ffmpeg build.",
-    );
   }
 
   const firstStep = manifest.steps[0];
@@ -90,13 +87,20 @@ export async function runPostPhase(
   const mapMs = timeMap ? (ms: number) => timeMap!.mapS(ms / 1000) * 1000 : undefined;
 
   let srtPath: string | null = null;
-  if (opts.subtitles !== 'off') {
+  if (opts.subtitles === 'sidecar') {
     const srt = generateSrt(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs });
-    srtPath =
-      opts.subtitles === 'sidecar'
-        ? join(dirname(opts.output), basename(opts.output, extname(opts.output)) + '.srt')
-        : join(opts.workDir, 'subtitles.srt');
+    srtPath = join(dirname(opts.output), basename(opts.output, extname(opts.output)) + '.srt');
     await writeFile(srtPath, srt);
+  }
+
+  // Burned captions: browser-rendered pills composited per cue window —
+  // works on every ffmpeg build (no libass needed) and styles with CSS.
+  let captionImages: CaptionImage[] = [];
+  if (opts.subtitles === 'burn') {
+    const cues = computeCues(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs });
+    const style = { ...DEFAULT_CAPTION_STYLE, ...opts.captionStyle };
+    captionImages = await renderCaptionImages(cues, style, join(opts.workDir, 'captions'), opts.viewport.width);
+    logger.info(`post: burning ${captionImages.length} caption(s)`);
   }
 
   let zoomFilter: string | undefined;
@@ -126,7 +130,12 @@ export async function runPostPhase(
     videoOffsetMs,
     targetWidth: opts.viewport.width,
     targetHeight: opts.viewport.height,
-    burnSrt: opts.subtitles === 'burn' && srtPath ? srtPath : undefined,
+    captions: captionImages.length
+      ? {
+          items: captionImages,
+          bottomMarginPx: opts.captionStyle?.bottomMarginPx ?? DEFAULT_CAPTION_STYLE.bottomMarginPx,
+        }
+      : undefined,
     zoomFilter,
     retime:
       timeMap && mapMs

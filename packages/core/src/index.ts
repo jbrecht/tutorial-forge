@@ -29,7 +29,8 @@ export { OpenAITTS, type OpenAITTSOptions } from './tts/openai.js';
 export { estimateDurationMs } from './tts/provider.js';
 export { defaultCacheDir, synthesizeCached } from './tts/cache.js';
 
-export { generateSrt, srtTime, wrapText } from './post/subtitles.js';
+export { generateSrt, computeCues, srtTime, wrapText, type Cue } from './post/subtitles.js';
+export { captionHtml, renderCaptionImages, DEFAULT_CAPTION_STYLE, type CaptionStyle } from './post/captions.js';
 export {
   buildMergeArgs,
   probeDurationMs,

@@ -99,6 +99,7 @@ try {
     workDir: join(outDir, 'work-idle'),
     ttsCacheDir: join(outDir, 'tts-cache'),
     idleSpeedup: true,
+    subtitles: 'burn', // exercises browser-rendered caption overlays (+ retime remap)
   });
   const idleUncompressedMs =
     idleResult.manifest.totalDurationMs - (idleResult.manifest.steps[0]!.startMs - 300);
@@ -106,8 +107,7 @@ try {
     idleResult.outputDurationMs < idleUncompressedMs - 2000,
     `idle speed-up saved >2s (${idleResult.outputDurationMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
   );
-  const idleSrt = readFileSync(idleResult.srtPath!, 'utf8');
-  assert.ok(idleSrt.trim().split('\n\n').length === 2, 'idle srt has both narrated cues');
+  assert.equal(idleResult.srtPath, null, 'burn mode writes no sidecar srt');
   console.log(
     `e2e OK [idle]: ${(idleUncompressedMs / 1000).toFixed(1)}s → ${(idleResult.outputDurationMs / 1000).toFixed(1)}s`,
   );

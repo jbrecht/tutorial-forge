@@ -127,8 +127,11 @@ export interface MergeArgsInput {
   /** Scale to this size in post (recording runs at deviceScaleFactor 2). */
   targetWidth: number;
   targetHeight: number;
-  /** Burn this .srt into the video, if set. */
-  burnSrt?: string;
+  /** Burned-in captions: pre-rendered transparent PNGs with display windows (output-timeline ms). */
+  captions?: {
+    items: Array<{ file: string; startMs: number; endMs: number }>;
+    bottomMarginPx: number;
+  };
   /** Pre-built zoom stage (fps + zoompan) to insert after the trim; see post/zoom.ts. */
   zoomFilter?: string;
   /** Idle speed-up retiming; see post/retime.ts. */
@@ -185,10 +188,20 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
   }
   if (input.zoomFilter) vf.push(input.zoomFilter);
   vf.push(`scale=${input.targetWidth}:${input.targetHeight}:flags=lanczos`);
-  if (input.burnSrt) {
-    vf.push(`subtitles=${escapeFilterPath(input.burnSrt)}`);
-  }
-  filters.push(`[0:v]${vf.join(',')}[vout]`);
+
+  // Burned captions: one overlay per cue, after scale (and after zoom — the
+  // captions must not be zoomed), each enabled for its display window.
+  const captionItems = input.captions?.items ?? [];
+  filters.push(`[0:v]${vf.join(',')}[${captionItems.length ? 'vbase' : 'vout'}]`);
+  captionItems.forEach((c, k) => {
+    args.push('-i', c.file);
+    const inputIndex = 1 + narrated.length + k;
+    const from = `[${k === 0 ? 'vbase' : `vcap${k - 1}`}]`;
+    const to = k === captionItems.length - 1 ? '[vout]' : `[vcap${k}]`;
+    filters.push(
+      `${from}[${inputIndex}:v]overlay=(W-w)/2:H-h-${input.captions!.bottomMarginPx}:enable='between(t,${(c.startMs / 1000).toFixed(3)},${(c.endMs / 1000).toFixed(3)})'${to}`,
+    );
+  });
 
   // Audio chain: silence base + each clip delayed to its slot, mixed.
   filters.push(
@@ -221,11 +234,6 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
     input.output,
   );
   return args;
-}
-
-/** ffmpeg filter args need ':' and '\' escaped inside path values. */
-function escapeFilterPath(p: string): string {
-  return `'${p.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:')}'`;
 }
 
 export async function runFfmpeg(args: string[]): Promise<void> {

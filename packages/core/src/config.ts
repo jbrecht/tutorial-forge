@@ -28,6 +28,8 @@ export interface ForgeConfig {
   zoom?: boolean | { factor?: number };
   /** Compress narration-free spans (spinners, slow loads). true → { maxIdleMs: 2000, speed: 3 }. */
   idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
+  /** Styling for burned-in captions (subtitles: 'burn'). */
+  captionStyle?: { fontSizePx?: number; maxWidthPx?: number; bottomMarginPx?: number };
 }
 
 const configSchema = z.object({
@@ -67,6 +69,13 @@ const configSchema = z.object({
         speed: z.number().min(1.5).max(10).optional(),
       }),
     ])
+    .optional(),
+  captionStyle: z
+    .object({
+      fontSizePx: z.number().positive().optional(),
+      maxWidthPx: z.number().positive().optional(),
+      bottomMarginPx: z.number().nonnegative().optional(),
+    })
     .optional(),
 });
 

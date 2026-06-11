@@ -54,6 +54,7 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         cursor: config.cursor,
         callouts: config.callouts,
         subtitles: config.subtitles,
+        captionStyle: config.captionStyle,
         leadInMs: config.leadInMs,
         keepWorkDir: opts.keepWork ?? config.keepWorkDir,
         ttsCacheDir: config.ttsCacheDir,

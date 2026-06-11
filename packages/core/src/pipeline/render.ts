@@ -78,6 +78,7 @@ export async function render(
       leadInMs,
       zoom: options.zoom,
       idleSpeedup: options.idleSpeedup,
+      captionStyle: options.captionStyle,
     });
 
     if (!(options.keepWorkDir ?? options.debug ?? false)) {
