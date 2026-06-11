@@ -5,6 +5,13 @@ import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
 import { buildMergeArgs, detectFlashOffsetMs, ffmpegHasFilter, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
 import { generateSrt } from '../post/subtitles.js';
 import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
+import {
+  buildRetimeFilter,
+  buildTimeMap,
+  computeIdleSegments,
+  DEFAULT_IDLE_SPEEDUP,
+  type TimeMap,
+} from '../post/retime.js';
 import { ensureDir, exists } from '../util/fs.js';
 import { logger } from '../util/logger.js';
 
@@ -15,6 +22,7 @@ export interface PostPhaseOptions {
   subtitles: 'burn' | 'sidecar' | 'off';
   leadInMs: number;
   zoom?: boolean | { factor?: number };
+  idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
 }
 
 export interface PostPhaseResult {
@@ -62,9 +70,28 @@ export async function runPostPhase(
 
   await ensureDir(dirname(opts.output));
 
+  // Idle speed-up: compress narration-free spans; everything downstream
+  // (audio delays, subtitles, zoom windows) maps through the same time map.
+  let timeMap: TimeMap | null = null;
+  if (opts.idleSpeedup) {
+    const config = {
+      ...DEFAULT_IDLE_SPEEDUP,
+      ...(typeof opts.idleSpeedup === 'object' ? opts.idleSpeedup : {}),
+    };
+    const segments = computeIdleSegments(manifest, trimStartMs, opts.leadInMs, config);
+    if (segments.length > 0) {
+      timeMap = buildTimeMap(segments, (manifest.totalDurationMs - trimStartMs) / 1000);
+      const savedS = (manifest.totalDurationMs - trimStartMs) / 1000 - timeMap.outputDurationS;
+      logger.info(
+        `post: idle speed-up — ${segments.length} span(s) at ${config.speed}x, saving ${savedS.toFixed(1)}s`,
+      );
+    }
+  }
+  const mapMs = timeMap ? (ms: number) => timeMap!.mapS(ms / 1000) * 1000 : undefined;
+
   let srtPath: string | null = null;
   if (opts.subtitles !== 'off') {
-    const srt = generateSrt(manifest, { leadInMs: opts.leadInMs, trimStartMs });
+    const srt = generateSrt(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs });
     srtPath =
       opts.subtitles === 'sidecar'
         ? join(dirname(opts.output), basename(opts.output, extname(opts.output)) + '.srt')
@@ -75,8 +102,16 @@ export async function runPostPhase(
   let zoomFilter: string | undefined;
   if (opts.zoom) {
     const factor = (typeof opts.zoom === 'object' && opts.zoom.factor) || DEFAULT_ZOOM_FACTOR;
-    const callouts = manifest.steps.flatMap((s) => s.callouts);
-    const windows = computeZoomWindows(callouts, trimStartMs, manifest.totalDurationMs);
+    // With a retime active, express callouts on the retimed output timeline
+    // (atMs trim-relative + mapped, trimStart 0, output duration).
+    const callouts = manifest.steps
+      .flatMap((s) => s.callouts)
+      .map((c) => (mapMs ? { ...c, atMs: mapMs(c.atMs - trimStartMs) } : c));
+    const windows = computeZoomWindows(
+      callouts,
+      mapMs ? 0 : trimStartMs,
+      mapMs && timeMap ? timeMap.outputDurationS * 1000 : manifest.totalDurationMs,
+    );
     zoomFilter = buildZoomFilter(windows, factor, opts.viewport.width, opts.viewport.height, manifest.fps) ?? undefined;
     if (zoomFilter) logger.info(`post: zooming on ${windows.length} callout(s) (factor ${factor})`);
   }
@@ -93,6 +128,15 @@ export async function runPostPhase(
     targetHeight: opts.viewport.height,
     burnSrt: opts.subtitles === 'burn' && srtPath ? srtPath : undefined,
     zoomFilter,
+    retime:
+      timeMap && mapMs
+        ? {
+            filter: buildRetimeFilter(timeMap),
+            mapMs,
+            outputDurationMs: timeMap.outputDurationS * 1000,
+            fps: manifest.fps,
+          }
+        : undefined,
   });
   logger.info('post: merging audio + video (ffmpeg)');
   await runFfmpeg(args);

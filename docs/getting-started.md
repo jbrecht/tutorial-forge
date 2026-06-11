@@ -80,6 +80,8 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 
 **Zoom-on-callout:** pass `--zoom` (or set `zoom: true` / `zoom: { factor: 1.5 }` in config) to smoothly zoom toward each click target and back out — the camera leads the click, holds through what it reveals, then releases. Composited in post from the timing manifest, so it adds nothing to recording time.
 
+**Idle speed-up:** pass `--idle-speedup` (or `idleSpeedup: true` / `{ maxIdleMs: 2000, speed: 3 }`) to fast-forward narration-free waits — spinners, slow loads, long silent steps. Narration playback and click choreography always stay at 1x; audio offsets and subtitle cues are remapped to the shortened timeline automatically.
+
 ## Debugging a failing tutorial
 
 When a step fails, the render throws a `StepError` naming the tutorial and step, the work dir is kept, and two artifacts are always written: a screenshot of the page at failure and the recent browser console/pageerror/requestfailed log.

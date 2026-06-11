@@ -7,16 +7,23 @@ import type { TimingManifest } from '../types.js';
  */
 export function generateSrt(
   manifest: TimingManifest,
-  opts: { leadInMs: number; trimStartMs: number; maxLineChars?: number },
+  opts: {
+    leadInMs: number;
+    trimStartMs: number;
+    maxLineChars?: number;
+    /** Optional retime map (idle speed-up): trimmed-timeline ms → output ms. */
+    mapMs?: (ms: number) => number;
+  },
 ): string {
   const max = opts.maxLineChars ?? 42;
+  const mapMs = opts.mapMs ?? ((ms: number) => ms);
   const cues: string[] = [];
   let n = 0;
   for (const step of manifest.steps) {
     if (!step.narration.trim() || step.audioDurationMs <= 0) continue;
     n += 1;
-    const start = step.startMs + opts.leadInMs - opts.trimStartMs;
-    const end = start + step.audioDurationMs;
+    const start = mapMs(step.startMs + opts.leadInMs - opts.trimStartMs);
+    const end = start + step.audioDurationMs; // narration spans play at 1x
     cues.push(`${n}\n${srtTime(start)} --> ${srtTime(end)}\n${wrapText(step.narration, max)}\n`);
   }
   return cues.join('\n');

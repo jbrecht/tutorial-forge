@@ -16,6 +16,8 @@ export interface RenderCmdOptions {
   zoom?: boolean;
   /** Debug mode: trace, console log, per-step screenshots, work dir kept. */
   debug?: boolean;
+  /** Enable idle speed-up (overrides config.idleSpeedup). */
+  idleSpeedup?: boolean;
 }
 
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
@@ -60,6 +62,7 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         lang: lang ?? undefined,
         defaultLang,
         zoom: opts.zoom ?? config.zoom,
+        idleSpeedup: opts.idleSpeedup ?? config.idleSpeedup,
         debug: opts.debug,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {

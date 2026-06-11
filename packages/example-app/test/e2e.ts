@@ -83,6 +83,35 @@ try {
   assert.ok(!esSrt.includes('Welcome to Lumen Events'), 'es srt contains no source narration');
   console.log(`e2e OK [es]: ${esOutput} (${(esResult.outputDurationMs / 1000).toFixed(1)}s)`);
 
+  // Idle speed-up: a tutorial with a long silent wait must come out shorter,
+  // with narration offsets remapped (cue still starts after the lead-in).
+  const idleTutorial = tutorial('Idle', [
+    step('A short narrated step.', async () => {}, { id: 'narrated' }),
+    step('', async (page) => {
+      await page.waitForTimeout(4000); // silent dead time — the compression target
+    }, { id: 'silent-wait' }),
+    step('And a narrated wrap-up.', async () => {}, { id: 'outro' }),
+  ], { id: 'idle-demo' });
+  const idleOutput = join(outDir, 'idle-demo.mp4');
+  const idleResult = await render(idleTutorial, adapter, {
+    tts: SilentProvider(),
+    output: idleOutput,
+    workDir: join(outDir, 'work-idle'),
+    ttsCacheDir: join(outDir, 'tts-cache'),
+    idleSpeedup: true,
+  });
+  const idleUncompressedMs =
+    idleResult.manifest.totalDurationMs - (idleResult.manifest.steps[0]!.startMs - 300);
+  assert.ok(
+    idleResult.outputDurationMs < idleUncompressedMs - 2000,
+    `idle speed-up saved >2s (${idleResult.outputDurationMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
+  );
+  const idleSrt = readFileSync(idleResult.srtPath!, 'utf8');
+  assert.ok(idleSrt.trim().split('\n\n').length === 2, 'idle srt has both narrated cues');
+  console.log(
+    `e2e OK [idle]: ${(idleUncompressedMs / 1000).toFixed(1)}s → ${(idleResult.outputDurationMs / 1000).toFixed(1)}s`,
+  );
+
   // Failure path: a broken step in debug mode must throw StepError with
   // screenshot, console log, and trace artifacts in a kept work dir.
   const broken = tutorial('Broken', [

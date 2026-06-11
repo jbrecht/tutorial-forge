@@ -131,6 +131,16 @@ export interface MergeArgsInput {
   burnSrt?: string;
   /** Pre-built zoom stage (fps + zoompan) to insert after the trim; see post/zoom.ts. */
   zoomFilter?: string;
+  /** Idle speed-up retiming; see post/retime.ts. */
+  retime?: {
+    /** setpts filter implementing the time map. */
+    filter: string;
+    /** Map trimmed-timeline ms → retimed output ms (for audio delays). */
+    mapMs: (ms: number) => number;
+    /** Duration of the retimed output (replaces totalDuration - trimStart). */
+    outputDurationMs: number;
+    fps: number;
+  };
 }
 
 /**
@@ -147,13 +157,17 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
     const file = audioFiles[i];
     if (!file) return;
     args.push('-i', file);
-    // Audio offsets are relative to the *trimmed* video start.
-    const delayMs = Math.max(0, s.startMs + leadInMs - trimStartMs);
+    // Audio offsets are relative to the *trimmed* video start; with idle
+    // speed-up they map through the retime (narration spans stay at 1x).
+    const rawDelay = Math.max(0, s.startMs + leadInMs - trimStartMs);
+    const delayMs = input.retime ? Math.round(input.retime.mapMs(rawDelay)) : rawDelay;
     narrated.push({ inputIndex: narrated.length + 1, delayMs });
   });
 
   const filters: string[] = [];
-  const durationS = ((manifest.totalDurationMs - trimStartMs) / 1000).toFixed(3);
+  const durationS = (
+    (input.retime ? input.retime.outputDurationMs : manifest.totalDurationMs - trimStartMs) / 1000
+  ).toFixed(3);
 
   // Video chain: trim pre-roll + post-tutorial tail (manifest clock shifted
   // into video time by the flash offset), reset timestamps, downscale.
@@ -163,6 +177,12 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
     `trim=start=${videoTrimStartS}:end=${videoTrimEndS}`,
     'setpts=PTS-STARTPTS',
   ];
+  if (input.retime) {
+    vf.push(input.retime.filter);
+    // Re-normalize to CFR (frames bunch up inside compressed spans) unless
+    // the zoom stage follows — it begins with its own fps filter.
+    if (!input.zoomFilter) vf.push(`fps=${input.retime.fps}`);
+  }
   if (input.zoomFilter) vf.push(input.zoomFilter);
   vf.push(`scale=${input.targetWidth}:${input.targetHeight}:flags=lanczos`);
   if (input.burnSrt) {

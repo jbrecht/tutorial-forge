@@ -26,6 +26,8 @@ export interface ForgeConfig {
   ttsByLang?: Record<string, TTSProvider>;
   /** Zoom toward click targets in post. true → factor 1.35. Default off. */
   zoom?: boolean | { factor?: number };
+  /** Compress narration-free spans (spinners, slow loads). true → { maxIdleMs: 2000, speed: 3 }. */
+  idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
 }
 
 const configSchema = z.object({
@@ -56,6 +58,15 @@ const configSchema = z.object({
     .optional(),
   zoom: z
     .union([z.boolean(), z.object({ factor: z.number().min(1).max(3).optional() })])
+    .optional(),
+  idleSpeedup: z
+    .union([
+      z.boolean(),
+      z.object({
+        maxIdleMs: z.number().positive().optional(),
+        speed: z.number().min(1.5).max(10).optional(),
+      }),
+    ])
     .optional(),
 });
 

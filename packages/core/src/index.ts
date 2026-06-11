@@ -42,3 +42,11 @@ export {
 } from './post/ffmpeg.js';
 export { stepHoldUntilMs } from './browser/timing.js';
 export { computeZoomWindows, buildZoomFilter, DEFAULT_ZOOM_FACTOR, type ZoomWindow } from './post/zoom.js';
+export {
+  computeIdleSegments,
+  buildTimeMap,
+  buildRetimeFilter,
+  DEFAULT_IDLE_SPEEDUP,
+  type SpeedSegment,
+  type TimeMap,
+} from './post/retime.js';

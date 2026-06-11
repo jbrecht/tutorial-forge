@@ -82,6 +82,12 @@ export interface RenderOptions {
   /** Zoom toward click targets in post. true → factor 1.35. Default off. */
   zoom?: boolean | { factor?: number };
   /**
+   * Compress narration-free spans longer than maxIdleMs at the given speed
+   * (spinners, slow loads). Narration and click choreography always play at
+   * 1x. true → { maxIdleMs: 2000, speed: 3 }. Default off.
+   */
+  idleSpeedup?: boolean | { maxIdleMs?: number; speed?: number };
+  /**
    * Debug mode: keep the work dir, record a Playwright trace (trace.zip),
    * write the full browser console log, and capture before/after screenshots
    * per step. Adds time per step; not for production renders.

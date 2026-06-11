@@ -77,6 +77,7 @@ export async function render(
       subtitles: options.subtitles ?? 'sidecar',
       leadInMs,
       zoom: options.zoom,
+      idleSpeedup: options.idleSpeedup,
     });
 
     if (!(options.keepWorkDir ?? options.debug ?? false)) {
