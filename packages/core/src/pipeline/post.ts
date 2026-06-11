@@ -1,7 +1,7 @@
 import { join, dirname, basename, extname } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import type { TimingManifest } from '../types.js';
-import { RAW_VIDEO_FILE } from './record.js';
+import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
 import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
 import { generateSrt } from '../post/subtitles.js';
 import { ensureDir, exists } from '../util/fs.js';
@@ -37,7 +37,9 @@ export async function runPostPhase(
 
   const firstStep = manifest.steps[0];
   if (!firstStep) throw new Error('Manifest has no steps');
-  const trimStartMs = Math.max(0, firstStep.startMs - opts.leadInMs);
+  // Never trim before the calibration flash has fully cleared (plus a couple
+  // of frames of margin), or magenta frames leak into the output.
+  const trimStartMs = Math.max(FLASH_MS + 200, firstStep.startMs - opts.leadInMs);
 
   let videoOffsetMs = await detectFlashOffsetMs(rawVideo);
   if (videoOffsetMs === null) {

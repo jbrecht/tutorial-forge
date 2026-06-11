@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { render, probeDurationMs, SilentProvider, type TutorialAdapter } from 'tutorial-forge';
+import { render, probeDurationMs, detectFlashOffsetMs, SilentProvider, type TutorialAdapter } from 'tutorial-forge';
 import { startServer } from '../src/server.ts';
 import gettingStarted from '../tutorials/getting-started.tutorial.ts';
 
@@ -53,6 +53,11 @@ try {
     'at least one callout was captured',
   );
   assert.ok(result.videoClockOffsetMs > 0, 'calibration flash was detected');
+  assert.equal(
+    await detectFlashOffsetMs(output, 2),
+    null,
+    'calibration flash must be trimmed out of the final video',
+  );
 
   console.log(`\ne2e OK: ${output} (${(actualMs / 1000).toFixed(1)}s, offset ${result.videoClockOffsetMs}ms, ${narratedSteps} cues)`);
 

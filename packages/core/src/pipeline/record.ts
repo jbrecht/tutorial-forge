@@ -14,8 +14,11 @@ import { logger } from '../util/logger.js';
 
 export const RAW_VIDEO_FILE = 'raw.webm';
 export const MANIFEST_FILE = 'manifest.json';
+/** Calibration flash duration; the post phase must never trim inside it. */
+export const FLASH_MS = 120;
 const FINAL_HOLD_MS = 1000;
-const FLASH_MS = 120;
+/** Gap after the flash before setup, so the trim point can't land in the flash. */
+const POST_FLASH_HOLD_MS = 400;
 
 export interface RecordPhaseOptions {
   workDir: string;
@@ -73,10 +76,17 @@ export async function runRecordPhase(
         }, ms),
       );
     }, FLASH_MS);
+    // Keep the flash clear of the trim point even when setup is instant:
+    // post trims at steps[0].startMs - leadInMs, which without this hold can
+    // land inside the flash and leave magenta frames in the output.
+    await page.waitForTimeout(POST_FLASH_HOLD_MS);
 
     const ctx = { lang: opts.lang };
     logger.info(`record: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
     await adapter.setup(page, ctx);
+    // The final video begins leadInMs before step 1. Hold past that window
+    // now so it shows the settled app, not the tail end of setup.
+    await page.waitForTimeout(opts.leadInMs + 200);
 
     const callouts: CalloutRecord[][] = tutorial.steps.map(() => []);
     let currentStep = 0;
