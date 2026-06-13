@@ -70,7 +70,8 @@ export interface Step<S = unknown> {
    * `startTransition`-deferred Server Action dispatches its request, settling on
    * the pre-mutation UI. For the standard `startTransition` + Server Action +
    * `router.refresh()` pattern, prefer `waitFor` on the committed UI (the value
-   * flipping, a toast appearing) — see docs/writing-tutorials.md "Settling".
+   * flipping, a toast appearing) — see the "Settling" guide:
+   * https://github.com/jbrecht/tutorial-forge/blob/main/docs/writing-tutorials.md#settling-waitfor-vs-settleuntil-vs-settlems
    */
   settleUntil?: 'load' | 'domcontentloaded' | 'networkidle';
   /** Extra hold time (ms) after both narration and action complete. Default 400. */

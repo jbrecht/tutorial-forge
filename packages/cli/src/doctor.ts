@@ -103,6 +103,10 @@ export async function doctorCommand(opts: { config?: string; setup?: boolean } =
   // seeds + signs in for real (#19).
   if (opts.setup) {
     if (config) {
+      // Progress line: the probe runs the adapter's real setup, so it's bounded
+      // by the adapter's own waits (e.g. a 30s waitForURL on sign-in) and can
+      // take a while on the failure path — say so rather than looking hung.
+      console.log('… running adapter.setup (bounded by your adapter\'s own timeouts)');
       try {
         await probeAdapterSetup(config.adapter);
         checks.push({ name: 'adapter.setup', ok: true, detail: 'ran and tore down cleanly' });
