@@ -6,7 +6,7 @@
     "lib": ["ES2022", "DOM"],
     "strict": true,
     "declaration": true,
-    "sourceMap": true,
+    "sourceMap": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true,
