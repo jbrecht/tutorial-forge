@@ -140,6 +140,16 @@ export async function runRecordPhase(
       if (opts.debug) await debugScreenshot(page, opts.workDir, `${id}-before`);
       const actionStartMs = clock.now();
       try {
+        // Anchor the cursor on the focus control (smooth-scrolls + moves the
+        // cursor via the instrumented hover) before the step's own action, so
+        // narration about "this control" has a visual focus (#10). Decorative.
+        if (step.focus) {
+          try {
+            await step.focus(instrumented as Page, ctx).hover();
+          } catch (err) {
+            logger.debug(`focus anchor skipped for "${id}": ${err instanceof Error ? err.message : err}`);
+          }
+        }
         await step.run(instrumented as Page, ctx);
         await step.waitFor?.(instrumented as Page, ctx);
       } catch (cause) {

@@ -27,7 +27,7 @@ export default tutorial('Getting started with Lumen Events', [
 `step(narration, run, opts?)`:
 
 - **narration** — the line spoken over this step. Plain text (no SSML). May be `''` for silent steps.
-- **run(page)** — the action. You get the **raw Playwright `Page`**; use any Playwright API. The pipeline never wraps or re-invents Playwright — it only instruments `click`/`hover`/`fill`/`check`/`selectOption`-style calls to animate the fake cursor and record callouts. If an exotic call path escapes the instrumentation, the action still works; the cursor just doesn't move.
+- **run(page)** — the action. You get the **raw Playwright `Page`**; use any Playwright API. The pipeline never wraps or re-invents Playwright — it only instruments `click`/`hover`/`fill`/`check`/`selectOption`-style calls to animate the fake cursor and record callouts. Before each such action the target is **smooth-scrolled into the center of the frame** if it isn't already visible, so below-the-fold fills/selects/clicks play on-screen with the cursor on the right element — no manual `scrollIntoView` + `waitForTimeout`. If an exotic call path escapes the instrumentation, the action still works; the cursor just doesn't move.
 - **opts.id** — stable slug used in the manifest, cache keys, and logs. Auto-derived from the index (`step-01`) if omitted, but explicit ids keep artifacts stable when you reorder steps.
 - **opts.waitFor(page)** — awaited after `run()`. Playwright auto-waiting covers most readiness; use this for slow async operations. Prefer locator waits over timeouts:
 
@@ -38,6 +38,18 @@ export default tutorial('Getting started with Lumen Events', [
     waitFor: async (page) => {
       await page.locator('#toast.show').waitFor();
     },
+  })
+  ```
+
+- **opts.focus(page)** — returns a locator to **anchor the cursor on at the start of the step**: it smooth-scrolls that control into frame and moves the fake cursor there, so narration about "this control" has a visual focus even when the step's action is elsewhere or it is pure narration. Decorative — a failure here is logged and skipped, never failing the render.
+
+  ```ts
+  step('Now switch the status to Tickets open.', async (page) => {
+    await page.getByLabel('Status').selectOption('open');
+  }, {
+    // Usually unnecessary — the selectOption above already scrolls + anchors.
+    // Use focus when the control you're describing isn't the one you act on:
+    focus: (page) => page.getByText('Event status'),
   })
   ```
 

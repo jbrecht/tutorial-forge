@@ -108,9 +108,16 @@ export async function previewStep(
       await step.waitFor?.(instrumented as Page, ctx);
     }
 
-    // Run the target step itself.
+    // Run the target step itself (with its focus anchor, to match a real render).
     const step = tutorial.steps[target]!;
     logger.info(`preview: step ${target + 1}/${tutorial.steps.length} "${id}"`);
+    if (step.focus) {
+      try {
+        await step.focus(instrumented as Page, ctx).hover();
+      } catch (err) {
+        logger.debug(`focus anchor skipped for "${id}": ${err instanceof Error ? err.message : err}`);
+      }
+    }
     await step.run(instrumented as Page, ctx);
     await step.waitFor?.(instrumented as Page, ctx);
     await page.waitForTimeout(opts.settleMs ?? step.settleMs ?? 400);

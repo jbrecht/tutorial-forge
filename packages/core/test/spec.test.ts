@@ -29,6 +29,18 @@ describe('tutorial()', () => {
   it('rejects bad explicit ids', () => {
     expect(() => tutorial('x', [step('a', noop)], { id: 'Has Spaces' })).toThrow(/lowercase slug/);
   });
+
+  it('rejects a non-function focus with the index in the message', () => {
+    expect(() =>
+      tutorial('x', [{ narration: 'a', run: noop, focus: 'nope' as unknown as () => never }]),
+    ).toThrow(/step 0: focus must be a function/);
+  });
+
+  it('accepts a function focus', () => {
+    expect(() =>
+      tutorial('x', [{ narration: 'a', run: noop, focus: (() => ({})) as unknown as () => never }]),
+    ).not.toThrow();
+  });
 });
 
 describe('stepId', () => {

@@ -42,6 +42,37 @@ const PAGE_ACTION_METHODS = new Set([
 ]);
 
 /**
+ * Smooth-scroll the target to the center of the viewport when it isn't fully
+ * visible, then wait for the scroll to settle. Playwright auto-scrolls (and
+ * jumps) right before an action; doing it here first — smoothly — means the
+ * cursor travels and the callout rings over the framed element instead of an
+ * off-screen one, so below-the-fold fills/selects/clicks read on video without
+ * the author hand-writing scrollIntoView + waitForTimeout (#10).
+ */
+async function scrollIntoViewSmooth(page: Page, target: Locator): Promise<void> {
+  const alreadyInView = await target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    const inView = r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw;
+    if (!inView) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    return inView;
+  });
+  if (alreadyInView) return;
+  // Poll the element's own position until it stops moving — catches both
+  // window- and scroll-container scrolling — capped so an animating element
+  // can never stall the render.
+  let lastTop = Number.NaN;
+  for (let i = 0; i < 12; i++) {
+    const box = await target.boundingBox();
+    const top = box ? Math.round(box.y) : Number.NaN;
+    if (top === lastTop) break;
+    lastTop = top;
+    await page.waitForTimeout(80);
+  }
+}
+
+/**
  * Move the cursor to the target, pulse + ring on click-like actions, record
  * the callout. Any failure here is swallowed: the action must still run.
  */
@@ -54,6 +85,7 @@ async function presentAction(
   if (!hooks.cursor && !hooks.callouts) return;
   try {
     await target.waitFor({ state: 'visible', timeout: 5000 });
+    await scrollIntoViewSmooth(page, target);
     const box = await target.boundingBox();
     if (!box) return;
     const cx = box.x + box.width / 2;

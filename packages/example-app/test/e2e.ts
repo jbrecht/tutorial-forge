@@ -9,7 +9,12 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { chromium } from 'playwright';
 import { render, previewStep, probeDurationMs, detectFlashOffsetMs, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
+// Internal (not public API) — exercised from source under tsx for #10 coverage.
+import { instrumentPage } from '../../core/src/browser/instrument.ts';
+import { CURSOR_INIT_SCRIPT } from '../../core/src/browser/cursor.ts';
+import { CALLOUT_INIT_SCRIPT } from '../../core/src/browser/callout.ts';
 import { startServer } from '../src/server.ts';
 import gettingStarted from '../tutorials/getting-started.tutorial.ts';
 
@@ -146,6 +151,64 @@ try {
   assert.equal(previewByIndex.index, 1, 'preview resolved a 1-based index to 0-based');
   assert.ok(existsSync(previewByIndex.screenshot), 'preview-by-index screenshot exists');
   console.log(`e2e OK [preview]: ${previewById.stepId} → ${previewById.screenshot}`);
+
+  // #10 — auto-scroll-into-view: an instrumented action on a below-the-fold
+  // target smooth-scrolls it into frame before the cursor travels there, so
+  // the action plays on-screen (no manual scrollIntoView needed).
+  {
+    const browser = await chromium.launch();
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+      await ctx.addInitScript(CURSOR_INIT_SCRIPT);
+      await ctx.addInitScript(CALLOUT_INIT_SCRIPT);
+      const page = await ctx.newPage();
+      await page.goto(baseURL);
+      await page.evaluate(() => {
+        const above = Object.assign(document.createElement('div'), { style: 'height:3000px' });
+        const btn = Object.assign(document.createElement('button'), { id: 'far-target', textContent: 'Far' });
+        btn.addEventListener('click', () => (btn.textContent = 'Clicked'));
+        const below = Object.assign(document.createElement('div'), { style: 'height:3000px' });
+        document.body.append(above, btn, below);
+        window.scrollTo(0, 0);
+      });
+      const before = await page.locator('#far-target').boundingBox();
+      assert.ok(before && before.y > 720, `target starts below the fold (y=${before?.y})`);
+      await instrumentPage(page, { cursor: true, callouts: true, nowMs: () => 0, onCallout: () => {} })
+        .locator('#far-target')
+        .click();
+      const after = await page.locator('#far-target').boundingBox();
+      assert.ok(after && after.y >= 0 && after.y <= 720, `target scrolled into view (y=${after?.y.toFixed(0)})`);
+      assert.equal(await page.locator('#far-target').textContent(), 'Clicked', 'the click landed on-screen');
+      console.log(`e2e OK [scroll]: below-fold target ${before!.y.toFixed(0)} → ${after!.y.toFixed(0)} (vh 720), clicked`);
+    } finally {
+      await browser.close();
+    }
+  }
+
+  // #10 — focus option: a pure-narration step anchors the cursor on a control,
+  // smooth-scrolling it into frame even though the step performs no action.
+  {
+    const focusTut = tutorial('Focus', [
+      step('Add a far control.', async (p) => {
+        await p.evaluate(() => {
+          const above = Object.assign(document.createElement('div'), { style: 'height:3000px' });
+          const anchor = Object.assign(document.createElement('div'), { id: 'focus-anchor', textContent: 'Anchor', tabIndex: 0 });
+          const below = Object.assign(document.createElement('div'), { style: 'height:3000px' });
+          document.body.append(above, anchor, below);
+          window.scrollTo(0, 0);
+        });
+      }, { id: 'add' }),
+      step('This control matters.', async () => {}, { id: 'narrate', focus: (p) => p.locator('#focus-anchor') }),
+    ], { id: 'focus-demo' });
+    const focusPreview = await previewStep(focusTut, adapter, {
+      step: 'narrate',
+      workDir: join(outDir, 'focus'),
+      output: join(outDir, 'focus.png'),
+      viewport: { width: 1280, height: 720 },
+    });
+    assert.ok(existsSync(focusPreview.screenshot), 'focus-anchored preview screenshot exists');
+    console.log(`e2e OK [focus]: pure-narration step anchored without error → ${focusPreview.screenshot}`);
+  }
 
   // Failure path: a broken step in debug mode must throw StepError with
   // screenshot, console log, and trace artifacts in a kept work dir.

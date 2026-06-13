@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
 /** Passed to adapter and step callbacks; lets app code react to the render language. */
 export interface StepContext {
@@ -25,6 +25,14 @@ export interface Step {
   run: (page: Page, ctx: StepContext) => Promise<void>;
   /** Optional readiness hook awaited after run(); use when auto-waiting isn't enough. */
   waitFor?: (page: Page, ctx: StepContext) => Promise<void>;
+  /**
+   * Anchor the cursor on a control at the start of the step — smooth-scrolls it
+   * into frame and moves the fake cursor there — so narration about "this
+   * control" has a visual focus even when the step's action is elsewhere or it
+   * is pure narration. Return the locator to anchor on. Decorative: a failure
+   * here is logged and skipped, never failing the render.
+   */
+  focus?: (page: Page, ctx: StepContext) => Locator;
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
 }

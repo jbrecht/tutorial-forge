@@ -33,6 +33,9 @@ export function validateTutorial(t: Tutorial): void {
     if (typeof s.run !== 'function') {
       throw new Error(`Tutorial "${t.id}" step ${i}: run must be a function`);
     }
+    if (s.focus != null && typeof s.focus !== 'function') {
+      throw new Error(`Tutorial "${t.id}" step ${i}: focus must be a function returning a locator`);
+    }
     const id = stepId(s, i);
     if (seen.has(id)) {
       throw new Error(`Tutorial "${t.id}" step ${i}: duplicate step id "${id}"`);
