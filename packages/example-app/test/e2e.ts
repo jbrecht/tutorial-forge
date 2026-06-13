@@ -210,6 +210,49 @@ try {
     console.log(`e2e OK [focus]: pure-narration step anchored without error → ${focusPreview.screenshot}`);
   }
 
+  // #8 — per-tutorial setup/teardown + ctx.onTeardown compose with the adapter.
+  // Setup runs adapter→tutorial; teardown runs step-thunks (LIFO)→tutorial→adapter.
+  {
+    const order: string[] = [];
+    const hookAdapter: TutorialAdapter = {
+      baseURL,
+      async setup(page) {
+        order.push('adapter.setup');
+        await page.goto(baseURL);
+        await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
+      },
+      async teardown() {
+        order.push('adapter.teardown');
+      },
+    };
+    const hookTut = tutorial('Hooks', [
+      step('Only step.', async (_page, ctx) => {
+        ctx.onTeardown(() => { order.push('step.teardown.a'); });
+        ctx.onTeardown(() => { order.push('step.teardown.b'); });
+      }, { id: 'only' }),
+    ], {
+      id: 'hooks-demo',
+      async setup() {
+        order.push('tutorial.setup');
+      },
+      async teardown() {
+        order.push('tutorial.teardown');
+      },
+    });
+    await render(hookTut, hookAdapter, {
+      tts: SilentProvider(),
+      output: join(outDir, 'hooks.mp4'),
+      workDir: join(outDir, 'work-hooks'),
+      ttsCacheDir: join(outDir, 'tts-cache'),
+    });
+    assert.deepEqual(
+      order,
+      ['adapter.setup', 'tutorial.setup', 'step.teardown.b', 'step.teardown.a', 'tutorial.teardown', 'adapter.teardown'],
+      'tutorial hooks + onTeardown compose with the adapter in the right order (teardown is LIFO)',
+    );
+    console.log(`e2e OK [hooks]: ${order.join(' → ')}`);
+  }
+
   // Failure path: a broken step in debug mode must throw StepError with
   // screenshot, console log, and trace artifacts in a kept work dir.
   const broken = tutorial('Broken', [

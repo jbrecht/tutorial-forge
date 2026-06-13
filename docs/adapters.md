@@ -29,6 +29,38 @@ export const myAdapter: TutorialAdapter = {
 };
 ```
 
+## Per-tutorial setup/teardown
+
+The adapter is the **shared** auth/seed baseline — every tutorial runs through it. When one tutorial needs a different starting state than another (a clean "create your first event" narrative vs. a fully-seeded one), declare per-tutorial hooks that **compose with** the adapter:
+
+```ts
+export default tutorial('Create your first event', steps, {
+  // Runs after adapter.setup(), before step 1 — per-video state on top of the baseline.
+  async setup(page, ctx) {
+    await deleteAllEvents(); // this tutorial wants an empty list
+  },
+  // Runs after recording (after step thunks, before adapter.teardown()).
+  async teardown(page, ctx) {
+    await deleteAllEvents();
+  },
+});
+```
+
+Run order is **adapter.setup → tutorial.setup** going in, and **step `onTeardown` thunks (LIFO) → tutorial.teardown → adapter.teardown** coming out. Tutorials without hooks keep working through the adapter alone.
+
+For data a *step* creates mid-tutorial, register cleanup inline with `ctx.onTeardown()` instead of tracking it in the adapter:
+
+```ts
+step('Create an event.', async (page, ctx) => {
+  await page.getByRole('button', { name: 'New event' }).click();
+  await page.getByLabel('Name').fill('Launch Party');
+  await page.getByRole('button', { name: 'Create' }).click();
+  ctx.onTeardown(() => deleteEventByName('Launch Party')); // torn down deterministically
+});
+```
+
+Thunks run in reverse registration order, so the last thing created is the first cleaned up. Like teardown, `onTeardown` failures log a warning and never fail the render.
+
 ## Guidelines
 
 - **End setup on the screen step 1 expects.** The video starts (minus `leadInMs`) right where setup leaves off — wait for that screen to be fully rendered before returning.

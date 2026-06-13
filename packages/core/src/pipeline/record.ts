@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { writeFile, readFile } from 'node:fs/promises';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { createRecorder, type CaptureInfo, type RecorderKind } from './recorder.js';
-import type { CalloutRecord, FailureArtifacts, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
+import type { CalloutRecord, FailureArtifacts, StepContext, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { StepError } from '../types.js';
 import { ConsoleCapture } from '../browser/console.js';
 import { stepId } from '../spec.js';
@@ -106,9 +106,18 @@ export async function runRecordPhase(
       await page.waitForTimeout(POST_FLASH_HOLD_MS);
     }
 
-    const ctx = { lang: opts.lang };
+    // Step-registered cleanup thunks (ctx.onTeardown), run LIFO after recording.
+    const teardownThunks: Array<() => void | Promise<void>> = [];
+    const ctx: StepContext = {
+      lang: opts.lang,
+      onTeardown: (fn) => teardownThunks.push(fn),
+    };
     logger.info(`record: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
     await adapter.setup(page, ctx);
+    if (tutorial.setup) {
+      logger.info('record: tutorial setup');
+      await tutorial.setup(page, ctx);
+    }
     // The final video begins leadInMs before step 1. Hold past that window
     // now so it shows the settled app, not the tail end of setup.
     await page.waitForTimeout(opts.leadInMs + 200);
@@ -191,13 +200,10 @@ export async function runRecordPhase(
     await page.waitForTimeout(FINAL_HOLD_MS);
     const totalDurationMs = clock.now();
 
-    if (adapter.teardown) {
-      try {
-        await adapter.teardown(page, ctx);
-      } catch (err) {
-        logger.warn(`teardown failed (ignored): ${err instanceof Error ? err.message : err}`);
-      }
-    }
+    // Teardown, innermost-first: step thunks (LIFO) → tutorial → adapter.
+    for (const fn of teardownThunks.reverse()) await safeTeardown('step teardown', fn);
+    if (tutorial.teardown) await safeTeardown('tutorial teardown', () => tutorial.teardown!(page, ctx));
+    if (adapter.teardown) await safeTeardown('teardown', () => adapter.teardown!(page, ctx));
 
     if (opts.debug) {
       await writeFile(join(opts.workDir, 'console.log'), consoleLog.all().join('\n') + '\n');
@@ -301,6 +307,15 @@ async function safeClose(p: Promise<unknown>): Promise<void> {
     await p;
   } catch {
     /* already closed */
+  }
+}
+
+/** Run a teardown callback, logging (never throwing) on failure — cleanup must not fail the render. */
+async function safeTeardown(label: string, fn: () => void | Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    logger.warn(`${label} failed (ignored): ${err instanceof Error ? err.message : err}`);
   }
 }
 

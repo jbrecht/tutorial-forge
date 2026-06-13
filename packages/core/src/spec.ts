@@ -25,6 +25,11 @@ export function validateTutorial(t: Tutorial): void {
   if (!Array.isArray(t.steps) || t.steps.length === 0) {
     throw new Error(`Tutorial "${t.id}" has no steps`);
   }
+  for (const hook of ['setup', 'teardown'] as const) {
+    if (t[hook] != null && typeof t[hook] !== 'function') {
+      throw new Error(`Tutorial "${t.id}": ${hook} must be a function`);
+    }
+  }
   const seen = new Set<string>();
   t.steps.forEach((s, i) => {
     if (typeof s.narration !== 'string') {

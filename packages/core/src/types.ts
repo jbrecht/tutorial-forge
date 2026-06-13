@@ -4,6 +4,13 @@ import type { Locator, Page } from 'playwright';
 export interface StepContext {
   /** The language being rendered (from RenderOptions.lang / --lang), if any. */
   lang?: string;
+  /**
+   * Register a cleanup callback for data this step creates. Thunks run after
+   * recording in reverse (LIFO) order — before the tutorial's and adapter's
+   * teardown — so mid-tutorial state is cleaned up deterministically without
+   * the adapter needing to know about it. Failures are logged, not fatal.
+   */
+  onTeardown(fn: () => void | Promise<void>): void;
 }
 
 /** Gets the target app into a known, recordable state. The only app-specific code. */
@@ -48,6 +55,19 @@ export interface Tutorial {
    * Usually loaded from sidecar files (<tutorial-file>.<lang>.json) by the CLI.
    */
   translations?: Record<string, Record<string, string>>;
+  /**
+   * Per-tutorial setup, run after the adapter's setup() and before step 1 (not
+   * recorded). The adapter is the shared auth/seed baseline; this is per-video
+   * state — e.g. seed an event for this tutorial only. Optional; tutorials
+   * without it keep working through the adapter alone.
+   */
+  setup?(page: Page, ctx: StepContext): Promise<void>;
+  /**
+   * Per-tutorial cleanup, run after recording (not recorded) — after any
+   * step-registered onTeardown thunks and before the adapter's teardown().
+   * Failures are logged, not fatal.
+   */
+  teardown?(page: Page, ctx: StepContext): Promise<void>;
 }
 
 export interface TTSProvider {

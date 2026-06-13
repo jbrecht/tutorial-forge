@@ -41,6 +41,21 @@ describe('tutorial()', () => {
       tutorial('x', [{ narration: 'a', run: noop, focus: (() => ({})) as unknown as () => never }]),
     ).not.toThrow();
   });
+
+  it('rejects a non-function tutorial setup/teardown', () => {
+    expect(() =>
+      tutorial('x', [step('a', noop)], { setup: 'nope' as unknown as () => Promise<void> }),
+    ).toThrow(/setup must be a function/);
+    expect(() =>
+      tutorial('x', [step('a', noop)], { teardown: 'nope' as unknown as () => Promise<void> }),
+    ).toThrow(/teardown must be a function/);
+  });
+
+  it('accepts function tutorial setup/teardown', () => {
+    expect(() =>
+      tutorial('x', [step('a', noop)], { setup: noop, teardown: noop }),
+    ).not.toThrow();
+  });
 });
 
 describe('stepId', () => {

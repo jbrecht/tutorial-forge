@@ -1,6 +1,6 @@
 import { resolve, dirname } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
-import type { Tutorial, TutorialAdapter } from '../types.js';
+import type { StepContext, Tutorial, TutorialAdapter } from '../types.js';
 import { validateTutorial, stepId } from '../spec.js';
 import { localizeTutorial } from '../i18n.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
@@ -88,9 +88,14 @@ export async function previewStep(
     if (callouts || cursor) await context.addInitScript(CALLOUT_INIT_SCRIPT);
 
     const page = await context.newPage();
-    const ctx = { lang: opts.lang };
+    const teardownThunks: Array<() => void | Promise<void>> = [];
+    const ctx: StepContext = {
+      lang: opts.lang,
+      onTeardown: (fn) => teardownThunks.push(fn),
+    };
     logger.info(`preview: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
     await adapter.setup(page, ctx);
+    if (tutorial.setup) await tutorial.setup(page, ctx);
 
     // Instrument so cursor/callouts render exactly as in a real recording.
     const instrumented = instrumentPage(page, {
@@ -124,6 +129,20 @@ export async function previewStep(
 
     await page.screenshot({ path: output });
     logger.info(`preview: wrote ${output}`);
+
+    // Clean up like a real render: step thunks (LIFO) → tutorial → adapter,
+    // so a preview that creates data doesn't leak it into later runs.
+    const cleanup = async (label: string, fn: () => void | Promise<void>) => {
+      try {
+        await fn();
+      } catch (err) {
+        logger.debug(`${label} skipped: ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    for (const fn of teardownThunks.reverse()) await cleanup('step teardown', fn);
+    if (tutorial.teardown) await cleanup('tutorial teardown', () => tutorial.teardown!(page, ctx));
+    if (adapter.teardown) await cleanup('teardown', () => adapter.teardown!(page, ctx));
+
     return { stepId: id, index: target, screenshot: output };
   } finally {
     await safeClose(browser.close());
