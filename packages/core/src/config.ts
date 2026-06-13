@@ -34,6 +34,8 @@ export interface ForgeConfig {
   gif?: boolean | { widthPx?: number; fps?: number; captions?: boolean; steps?: string };
   /** Capture implementation: 'video' (default) or 'screencast' (exact clock alignment). */
   recorder?: 'video' | 'screencast';
+  /** Emit a per-step contact sheet next to each video for authoring verification (#9). Default off. */
+  contactSheet?: boolean;
 }
 
 const configSchema = z.object({
@@ -93,6 +95,7 @@ const configSchema = z.object({
     ])
     .optional(),
   recorder: z.enum(['video', 'screencast']).optional(),
+  contactSheet: z.boolean().optional(),
 });
 
 export function defineConfig(config: ForgeConfig): ForgeConfig {

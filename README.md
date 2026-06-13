@@ -54,6 +54,11 @@ The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, 
 
 Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), kept on failure. Phases re-run independently: `tutorial-forge render --phase post` re-merges without re-recording.
 
+**Authoring loop.** Two helpers tighten the iterate-on-one-step cycle:
+
+- `tutorial-forge preview <step>` renders a single step to a PNG in seconds — it replays setup + prior steps to reach state, then runs just the target step (by 1-based index or step id) and screenshots it. No TTS, no encode. Validate selectors and framing without re-recording the whole tutorial.
+- `tutorial-forge render --contact-sheet` emits a labeled grid PNG (one settled thumbnail per step) next to the video. A passing render only proves selectors *resolved* — the contact sheet lets you confirm every step framed the *right* thing at a glance.
+
 ## How it compares
 
 - **[playwright-recast](https://github.com/ThePatriczek/playwright-recast)** is the closest open-source neighbor: it post-processes recordings of your existing Playwright *tests* into videos, fitting voiceover onto the recording by retiming it. tutorial-forge inverts that relationship — narration is synthesized and measured *first*, and the browser holds each step on screen live until its line finishes, so pacing always feels deliberate. You also author tutorials as dedicated specs (with an adapter that seeds app state) rather than reusing tests. If you want videos from tests you already have, recast is a great fit; if you want to author tutorials as a first-class artifact, that's what this is for.
@@ -71,7 +76,7 @@ Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), k
 | Package | What |
 |---|---|
 | `packages/core` (`tutorial-forge`) | The library: types, spec builders, pipeline, TTS providers |
-| `packages/cli` (`tutorial-forge-cli`) | `tutorial-forge render / list / doctor / clean` (alias: `tforge`) |
+| `packages/cli` (`tutorial-forge-cli`) | `tutorial-forge render / preview / list / doctor / clean` (alias: `tforge`) |
 | `packages/example-app` | Self-contained demo app + tutorial; the dev/CI target |
 
 ## Quick start (this repo)

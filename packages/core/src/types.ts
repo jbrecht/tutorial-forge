@@ -106,6 +106,12 @@ export interface RenderOptions {
    * per step. Adds time per step; not for production renders.
    */
   debug?: boolean;
+  /**
+   * Authoring verification (#9): keep a settled screenshot per step and emit
+   * a labeled contact-sheet PNG next to the video, so an author can confirm
+   * every step framed the right thing without scrubbing the video. Default off.
+   */
+  contactSheet?: boolean;
 }
 
 export interface CalloutRecord {

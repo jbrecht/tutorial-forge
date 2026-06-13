@@ -47,6 +47,21 @@ export default tutorial('Getting started with Lumen Events', [
 
 Narration drives pacing. The pipeline synthesizes and measures every narration clip *first*; during recording each step is held on screen for at least `leadInMs` (default 300) + the clip's duration. If the action takes longer than the narration, the step holds until the action finishes instead. You never specify durations by hand.
 
+## Iterating on a step
+
+A passing render only proves your selectors *resolved* — not that the right thing was on screen. A step that locates a wrong-but-valid element (or one scrolled off-screen) succeeds silently. Two helpers close that gap without re-recording the whole tutorial every cycle:
+
+**`tutorial-forge preview <step>`** renders one step to a PNG in seconds. It runs `adapter.setup()` and then every step *before* the target back-to-back (no narration pacing, no TTS, no video) to reach the state the step runs in, then runs just the target step and screenshots it. `<step>` is a 1-based index (`preview 11`) or a step id (`preview set-status`); narrow to one tutorial with `--only <id>` when your globs match several. Use it to check a single step's selectors and framing fast.
+
+```sh
+tutorial-forge preview set-status --only my-tutorial
+# → .forge/preview/my-tutorial/preview-set-status.png
+```
+
+> Prior-step state is reached by replaying earlier `run()`/`waitFor()` callbacks in order — exactly what a real render does — so anything those steps set up (navigation, form state, seeded data) is present. Only the target step's `settleMs` hold is honored; intermediate pacing is skipped for speed.
+
+**`tutorial-forge render --contact-sheet`** keeps a settled screenshot per step and emits a labeled grid PNG next to the video (`<name>-contact-sheet.png`), one thumbnail per step tagged with its id and narration. Scan it to confirm every step framed the right thing at a glance, instead of scrubbing the video. Enable it persistently with `contactSheet: true` in `forge.config.ts`.
+
 ## Timing manifest
 
 Every render writes `manifest.json` describing the full timeline (per-step start/end, action windows, audio durations, callout boxes). It is the contract between the record and post phases and a debugging gold mine — run with `--keep-work` to keep it on success.

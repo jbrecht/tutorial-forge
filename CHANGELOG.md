@@ -20,6 +20,8 @@ Everything below is opt-in. Notes for existing consumers:
 
 ## Unreleased
 
+- New `tutorial-forge preview <step>` command: render a single step to a PNG in seconds. It replays `adapter.setup()` + every prior step's `run()` to reach state, then runs just the target step (by 1-based index or step id) and screenshots it — no TTS, no video assembly. Lets you validate one step's selectors/framing without re-recording the whole tutorial (#11).
+- New `--contact-sheet` flag (and `contactSheet: true` in config): after a render, keeps a settled screenshot per step and emits a labeled grid PNG next to the video (`<name>-contact-sheet.png`). A passing render only proves selectors resolved; the contact sheet lets an author confirm every step framed the right thing at a glance (#9).
 - `doctor` now probes that the app at your adapter's `baseURL` is reachable when run from a project, turning the most common render failure (forgot to start the dev server) into a clear up-front ✗ instead of a Playwright navigation timeout deep in a render. Accepts `--config <path>`; skips cleanly when no config is found (#12).
 - `idleSpeedup` now logs a one-line summary even when it compresses nothing (`post: idle speed-up — no spans over 2000ms`), so it's observable that it ran (#13).
 

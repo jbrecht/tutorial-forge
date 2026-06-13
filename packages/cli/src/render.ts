@@ -24,6 +24,8 @@ export interface RenderCmdOptions {
   gifSteps?: string;
   /** Capture implementation (overrides config.recorder). */
   recorder?: string;
+  /** Emit a per-step contact sheet next to the video for authoring verification. */
+  contactSheet?: boolean;
 }
 
 /** Merge --gif/--gif-steps flags with config.gif (flags win; --gif-steps implies --gif). */
@@ -91,13 +93,16 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         gif: resolveGifOption(opts, config.gif),
         recorder: resolveRecorder(opts.recorder) ?? config.recorder,
         debug: opts.debug,
+        contactSheet: opts.contactSheet ?? config.contactSheet,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {
         console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
         if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
         if (result.gifPath) console.log(`  gif:       ${result.gifPath}`);
+        if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
       } else {
         console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
+        if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
       }
     }
   }

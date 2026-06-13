@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { render, probeDurationMs, detectFlashOffsetMs, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
+import { render, previewStep, probeDurationMs, detectFlashOffsetMs, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
 import { startServer } from '../src/server.ts';
 import gettingStarted from '../tutorials/getting-started.tutorial.ts';
 
@@ -34,10 +34,17 @@ try {
     workDir: join(outDir, 'work'),
     keepWorkDir: true,
     ttsCacheDir: join(outDir, 'tts-cache'),
+    contactSheet: true, // exercises per-step screenshots + contact-sheet assembly (#9)
   });
 
   assert.ok(existsSync(output), 'output mp4 exists');
   assert.ok(result.srtPath && existsSync(result.srtPath), 'sidecar srt exists');
+
+  // #9 — contact sheet emitted next to the video, with one kept screenshot per step.
+  assert.ok(result.contactSheetPath && existsSync(result.contactSheetPath), 'contact sheet PNG exists');
+  for (const s of result.manifest.steps) {
+    assert.ok(existsSync(join(outDir, 'work', 'steps', `${s.id}.png`)), `step screenshot kept: ${s.id}`);
+  }
 
   const expectedMs = result.manifest.totalDurationMs - (result.manifest.steps[0]!.startMs - 300);
   const actualMs = await probeDurationMs(output);
@@ -121,6 +128,24 @@ try {
   console.log(
     `e2e OK [idle]: ${(idleUncompressedMs / 1000).toFixed(1)}s → ${(idleResult.outputDurationMs / 1000).toFixed(1)}s`,
   );
+
+  // #11 — single-step preview: replays setup + prior steps to reach state,
+  // runs just the target step, dumps a screenshot (no TTS, no video assembly).
+  const previewById = await previewStep(gettingStarted, adapter, {
+    step: 'create-event',
+    workDir: join(outDir, 'preview'),
+    output: join(outDir, 'preview-create-event.png'),
+  });
+  assert.ok(existsSync(previewById.screenshot), 'preview screenshot exists');
+  assert.equal(previewById.stepId, 'create-event', 'preview resolved the step id');
+  const previewByIndex = await previewStep(gettingStarted, adapter, {
+    step: '2',
+    workDir: join(outDir, 'preview'),
+    output: join(outDir, 'preview-2.png'),
+  });
+  assert.equal(previewByIndex.index, 1, 'preview resolved a 1-based index to 0-based');
+  assert.ok(existsSync(previewByIndex.screenshot), 'preview-by-index screenshot exists');
+  console.log(`e2e OK [preview]: ${previewById.stepId} → ${previewById.screenshot}`);
 
   // Failure path: a broken step in debug mode must throw StepError with
   // screenshot, console log, and trace artifacts in a kept work dir.

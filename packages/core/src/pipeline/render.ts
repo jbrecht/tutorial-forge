@@ -5,6 +5,7 @@ import { localizeTutorial } from '../i18n.js';
 import { runTTSPhase, loadTTSResult } from './tts.js';
 import { runRecordPhase, loadManifest } from './record.js';
 import { runPostPhase, type PostPhaseResult } from './post.js';
+import { renderContactSheet, contactSheetEntries, contactSheetPath } from './contact-sheet.js';
 import { defaultCacheDir } from '../tts/cache.js';
 import { ensureDir, removeDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
@@ -12,6 +13,8 @@ import { logger } from '../util/logger.js';
 export interface RenderResult extends PostPhaseResult {
   manifest: TimingManifest;
   workDir: string;
+  /** Path to the authoring contact sheet, if one was emitted (#9). */
+  contactSheetPath?: string | null;
 }
 
 /**
@@ -37,6 +40,7 @@ export async function render(
   const viewport = options.viewport ?? { width: 1920, height: 1080 };
   const leadInMs = options.leadInMs ?? 300;
   const phase = options.phase ?? 'all';
+  const wantContactSheet = options.contactSheet ?? false;
   await ensureDir(workDir);
 
   try {
@@ -65,10 +69,21 @@ export async function render(
             lang,
             recorder: options.recorder,
             debug: options.debug,
+            screenshots: wantContactSheet || options.debug,
           })
         : await loadManifest(workDir);
+
+    // Authoring contact sheet (#9): emit next to the final video so it
+    // survives work-dir cleanup. Built whenever record ran with screenshots on.
+    let sheetPath: string | null = null;
+    if (wantContactSheet && (phase === 'all' || phase === 'record')) {
+      sheetPath = await renderContactSheet(contactSheetEntries(manifest, workDir), contactSheetPath(output), viewport);
+      if (sheetPath) logger.info(`contact sheet: ${sheetPath}`);
+      else logger.warn('contact sheet: no step screenshots found to assemble');
+    }
+
     if (phase === 'record') {
-      return partialResult(workDir, output, manifest);
+      return { ...partialResult(workDir, output, manifest), contactSheetPath: sheetPath };
     }
 
     const post = await runPostPhase(manifest, {
@@ -88,7 +103,7 @@ export async function render(
     } else {
       logger.info(`work dir kept at ${workDir}`);
     }
-    return { ...post, manifest, workDir };
+    return { ...post, manifest, workDir, contactSheetPath: sheetPath };
   } catch (err) {
     logger.error(`render failed — work dir kept at ${workDir}`);
     throw err;

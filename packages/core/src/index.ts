@@ -29,6 +29,16 @@ export {
   type CaptureInfo,
 } from './pipeline/recorder.js';
 export { runPostPhase } from './pipeline/post.js';
+export {
+  renderContactSheet,
+  contactSheetHtml,
+  contactSheetEntries,
+  contactSheetPath,
+  DEFAULT_CONTACT_SHEET_STYLE,
+  type ContactSheetEntry,
+  type ContactSheetStyle,
+} from './pipeline/contact-sheet.js';
+export { previewStep, type PreviewOptions, type PreviewResult } from './pipeline/preview.js';
 
 export { SilentProvider } from './tts/silent.js';
 export { Piper, type PiperOptions } from './tts/piper.js';

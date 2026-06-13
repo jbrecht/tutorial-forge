@@ -35,6 +35,11 @@ export interface RecordPhaseOptions {
   recorder?: RecorderKind;
   /** Debug mode: Playwright trace, full console log, per-step screenshots. */
   debug?: boolean;
+  /**
+   * Keep a settled end-of-step screenshot per step (steps/<id>.png) on
+   * success, for the contact sheet (#9). Implied by debug.
+   */
+  screenshots?: boolean;
 }
 
 /**
@@ -155,6 +160,10 @@ export async function runRecordPhase(
       });
       const remaining = holdUntil - clock.now();
       if (remaining > 0) await page.waitForTimeout(remaining);
+
+      // Settled end-of-step frame for the contact sheet (#9): captured after
+      // the hold, so it matches what the viewer sees at the end of the step.
+      if (opts.screenshots) await debugScreenshot(page, opts.workDir, id);
 
       manifestSteps.push({
         id,

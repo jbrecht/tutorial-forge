@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { renderCommand } from './render.js';
+import { previewCommand } from './preview.js';
 import { listCommand } from './list.js';
 import { doctorCommand } from './doctor.js';
 import { cleanCommand } from './clean.js';
@@ -39,12 +40,27 @@ program
   .option('--gif', 'also export an animated GIF (captioned)')
   .option('--gif-steps <range>', 'GIF excerpt: a step id or "from-id..to-id" (implies --gif)')
   .option('--recorder <kind>', "capture implementation: 'video' (default) or 'screencast'")
+  .option('--contact-sheet', 'emit a per-step contact sheet PNG next to the video (authoring verification)')
   .option('--debug', 'keep work dir with Playwright trace, console log, per-step screenshots')
   .action(async (globs: string[], opts) => {
     if (!['tts', 'record', 'post', 'all'].includes(opts.phase)) {
       throw new Error(`Invalid --phase "${opts.phase}"`);
     }
     await renderCommand(globs, opts);
+  });
+
+program
+  .command('preview')
+  .description('render a single step to a PNG (replays prior steps to reach state; no TTS/video)')
+  .argument('<step>', 'step to preview: 1-based index or step id')
+  .argument('[globs...]', 'tutorial file globs (default: config or **/*.tutorial.ts)')
+  .option('--only <id>', 'select this tutorial (required when globs match more than one)')
+  .option('--config <path>', 'path to forge.config.ts')
+  .option('--headed', 'show the browser')
+  .option('--out <path>', 'screenshot output path (default: .forge/preview/<id>/preview-<step>.png)')
+  .option('--lang <lang>', 'render this language (affects steps that branch on ctx.lang)')
+  .action(async (step: string, globs: string[], opts) => {
+    await previewCommand(step, globs, opts);
   });
 
 program
