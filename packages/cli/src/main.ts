@@ -74,6 +74,7 @@ program
   .command('doctor')
   .description('check the environment (node, ffmpeg, playwright, TTS env vars, app reachability)')
   .option('--config <path>', 'path to forge.config.ts')
+  .option('--setup', "also run the adapter's setup() and tear it down, to catch a wrong-database/unseedable target")
   .action(doctorCommand);
 
 program

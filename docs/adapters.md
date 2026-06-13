@@ -46,7 +46,59 @@ export default tutorial('Create your first event', steps, {
 });
 ```
 
-Run order is **adapter.setup → tutorial.setup** going in, and **step `onTeardown` thunks (LIFO) → tutorial.teardown → adapter.teardown** coming out. Teardown runs even when a step fails mid-render, so data created before the failure is still cleaned up. Tutorials without hooks keep working through the adapter alone.
+Run order is **adapter.setup → tutorial.setup** going in, and **step `onTeardown` thunks (LIFO) → tutorial.teardown → adapter.teardown** coming out. Tutorials without hooks keep working through the adapter alone.
+
+The teardown chain runs on **every** exit path of a render — clean finish, a step failure, *and* a failure inside `adapter.setup`/`tutorial.setup` — so data created (and any `ctx.onTeardown` registered) before a throw is always cleaned up, never leaked into a shared test DB. Each hook is guarded: a teardown that runs against half-built state (e.g. after a setup failure) logs a warning instead of masking the original error. Because of this, **write teardown hooks to tolerate partial setup** (null-check what you delete).
+
+### Sharing state between the adapter and a tutorial
+
+`tutorial.setup` and steps usually need what `adapter.setup` established — the signed-in identity, a seeded id. Return it from `adapter.setup` and it lands on **`ctx.state`**, a per-render bag (scoped to one render, so it's parallel-safe). No module-global handoff, no `!` assertions:
+
+```ts
+interface Seed { steward: Person }
+
+export const adapter: TutorialAdapter<Seed> = {
+  baseURL: 'http://localhost:3000',
+  async setup(page) {
+    const steward = await seedSteward();
+    await signIn(page, steward);
+    return { steward }; // → ctx.state
+  },
+  async teardown(page, ctx) {
+    await deletePerson(ctx.state.steward.id);
+  },
+};
+
+// Read it in the tutorial — typed via tutorial<Seed>/step<Seed>:
+export default tutorial<Seed>('Send a broadcast', [
+  step<Seed>('Create an event.', async (page, ctx) => {
+    await createEvent(page, ctx.state.steward);
+    const id = new URL(page.url()).pathname.split('/').pop()!;
+    ctx.state.eventId = id;               // steps can stash live-created ids…
+    ctx.onTeardown(() => deleteEvent(id)); // …for their own cleanup
+  }),
+], {
+  async setup(page, ctx) {
+    await seedEventFor(ctx.state.steward); // reads what the adapter established
+  },
+});
+```
+
+A teardown thunk's return value is awaited and discarded, so value-returning one-liners work directly: `ctx.onTeardown(() => Promise.all(people.map((p) => deletePerson(p.id))))`.
+
+### Teardown coverage matrix
+
+Which hooks run on each path:
+
+| Path | step `onTeardown` | `tutorial.teardown` | `adapter.teardown` |
+|---|---|---|---|
+| Render — clean finish | ✓ | ✓ | ✓ |
+| Render — a step fails | ✓ (for completed steps) | ✓ | ✓ |
+| Render — `adapter.setup`/`tutorial.setup` throws | ✓ (registered before the throw) | ✓ | ✓ |
+| `preview <step>` (any outcome) | ✓ | ✓ | ✓ |
+| `doctor --setup` | ✓ | n/a (no tutorial) | ✓ |
+
+`preview` reaches partial, mid-tutorial state yet still runs the full chain — it's run repeatedly while tuning a step, so leaving the adapter seed behind would quietly fill the DB. (This is why teardown hooks must tolerate partial setup.)
 
 For data a *step* creates mid-tutorial, register cleanup inline with `ctx.onTeardown()` instead of tracking it in the adapter:
 
@@ -67,4 +119,5 @@ Thunks run in reverse registration order, so the last thing created is the first
 - **Seed deterministic state.** Same inputs should produce the same video. Create fixture data with fixed names/dates; avoid "3 minutes ago"-style relative content where you can.
 - **Run your app yourself.** The pipeline does not start your dev server; do that before `tutorial-forge render` (or in your CI job before the render step).
 - **Keep secrets in env vars.** The adapter is plain code in your repo; read credentials from the environment, as in any e2e test.
-- **Teardown failures are non-fatal.** They log a warning and the render still succeeds — teardown runs after the manifest is final.
+- **Teardown failures are non-fatal, and must tolerate partial setup.** They log a warning and the render still succeeds — teardown runs after the manifest is final, and also after a *failed* setup, so null-check what you delete.
+- **Verify setup before a full render.** `tutorial-forge doctor` checks the app is reachable; add `--setup` to actually run `adapter.setup` once and tear it down. It catches the "reachable but pointed at the wrong database" case — a green reachability check followed by a guaranteed sign-in failure — before you wait out a whole render.

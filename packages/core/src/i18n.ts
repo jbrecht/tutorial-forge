@@ -12,7 +12,7 @@ import { logger } from './util/logger.js';
  * - A language with no table at all throws: rendering a wholly untranslated
  *   tutorial under a language suffix would silently produce a mislabeled video.
  */
-export function localizeTutorial(tutorial: Tutorial, lang: string, defaultLang = 'en'): Tutorial {
+export function localizeTutorial<S = unknown>(tutorial: Tutorial<S>, lang: string, defaultLang = 'en'): Tutorial<S> {
   if (lang === defaultLang) return tutorial;
 
   const table = tutorial.translations?.[lang];
@@ -53,6 +53,6 @@ export function localizeTutorial(tutorial: Tutorial, lang: string, defaultLang =
 }
 
 /** Languages a tutorial can render in: the default language plus every translation table. */
-export function availableLanguages(tutorial: Tutorial, defaultLang = 'en'): string[] {
+export function availableLanguages(tutorial: Pick<Tutorial, 'translations'>, defaultLang = 'en'): string[] {
   return [defaultLang, ...Object.keys(tutorial.translations ?? {}).filter((l) => l !== defaultLang)];
 }

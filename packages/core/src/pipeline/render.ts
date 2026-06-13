@@ -1,5 +1,6 @@
 import { resolve, join } from 'node:path';
 import type { RenderOptions, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
+import { StepError } from '../types.js';
 import { validateTutorial } from '../spec.js';
 import { localizeTutorial } from '../i18n.js';
 import { runTTSPhase, loadTTSResult } from './tts.js';
@@ -22,9 +23,9 @@ export interface RenderResult extends PostPhaseResult {
  * Phases: tts → record → post. The work directory is kept on failure
  * (and on success with keepWorkDir: true) so every stage is inspectable.
  */
-export async function render(
-  tutorial: Tutorial,
-  adapter: TutorialAdapter,
+export async function render<S = unknown>(
+  tutorial: Tutorial<S>,
+  adapter: TutorialAdapter<S>,
   options: RenderOptions,
 ): Promise<RenderResult> {
   validateTutorial(tutorial);
@@ -54,7 +55,7 @@ export async function render(
           })
         : await loadTTSResult(workDir);
     if (phase === 'tts') {
-      return partialResult(workDir, output, await safeLoadManifest(workDir, tutorial));
+      return partialResult(workDir, output, await safeLoadManifest(workDir, tutorial.id));
     }
 
     const manifest =
@@ -106,16 +107,48 @@ export async function render(
     return { ...post, manifest, workDir, contactSheetPath: sheetPath };
   } catch (err) {
     logger.error(`render failed — work dir kept at ${workDir}`);
+    // On a step failure, the steps that completed already have settled
+    // screenshots on disk; emit a partial contact sheet (completed steps + the
+    // failure frame as the last cell) so the at-a-glance "what did each step
+    // frame" view exists for exactly the run you most want it for (#20).
+    if (wantContactSheet && err instanceof StepError) {
+      await emitFailureContactSheet(err, workDir, output, viewport);
+    }
     throw err;
   }
 }
 
-async function safeLoadManifest(workDir: string, tutorial: Tutorial): Promise<TimingManifest> {
+/** Best-effort partial contact sheet for a failed render. Never throws — diagnostics must not mask the StepError. */
+async function emitFailureContactSheet(
+  err: StepError,
+  workDir: string,
+  output: string,
+  viewport: { width: number; height: number },
+): Promise<void> {
+  try {
+    const manifest = await loadManifest(workDir); // completed steps only (the failing one isn't recorded)
+    const entries = contactSheetEntries(manifest, workDir);
+    if (err.artifacts?.screenshot) {
+      entries.push({
+        index: entries.length + 1,
+        id: `${err.stepId} (failed)`,
+        narration: err.cause instanceof Error ? err.cause.message : String(err.cause),
+        file: err.artifacts.screenshot,
+      });
+    }
+    const sheet = await renderContactSheet(entries, contactSheetPath(output), viewport);
+    if (sheet) logger.info(`contact sheet (partial, through failure): ${sheet}`);
+  } catch (sheetErr) {
+    logger.warn(`partial contact sheet skipped: ${sheetErr instanceof Error ? sheetErr.message : sheetErr}`);
+  }
+}
+
+async function safeLoadManifest(workDir: string, tutorialId: string): Promise<TimingManifest> {
   try {
     return await loadManifest(workDir);
   } catch {
     return {
-      tutorialId: tutorial.id,
+      tutorialId,
       fps: 25,
       recordingStartEpochMs: 0,
       steps: [],

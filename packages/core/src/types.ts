@@ -1,37 +1,56 @@
 import type { Locator, Page } from 'playwright';
 
-/** Passed to adapter and step callbacks; lets app code react to the render language. */
-export interface StepContext {
+/**
+ * Passed to adapter and step callbacks; lets app code react to the render
+ * language and share per-render state. Generic in the shape of `state` (S),
+ * which `adapter.setup`'s return value populates — see {@link TutorialAdapter}.
+ */
+export interface StepContext<S = unknown> {
   /** The language being rendered (from RenderOptions.lang / --lang), if any. */
   lang?: string;
+  /**
+   * Per-render state bag, scoped to one render (never shared across renders, so
+   * it's safe even if renders run in parallel). The value `adapter.setup`
+   * returns lands here, so `tutorial.setup` and steps can read what the adapter
+   * established (the signed-in identity, seeded ids) without a module-global
+   * handoff — and steps can stash a live-created id on it for their own
+   * `onTeardown`. Defaults to `{}` when the adapter returns nothing.
+   */
+  state: S;
   /**
    * Register a cleanup callback for data this step creates. Thunks run after
    * recording in reverse (LIFO) order — before the tutorial's and adapter's
    * teardown — so mid-tutorial state is cleaned up deterministically without
-   * the adapter needing to know about it. Failures are logged, not fatal.
+   * the adapter needing to know about it. The return value is awaited and
+   * discarded, so `() => Promise.all([...])` works directly. Failures are
+   * logged, not fatal.
    */
-  onTeardown(fn: () => void | Promise<void>): void;
+  onTeardown(fn: () => unknown | Promise<unknown>): void;
 }
 
 /** Gets the target app into a known, recordable state. The only app-specific code. */
-export interface TutorialAdapter {
+export interface TutorialAdapter<S = unknown> {
   /** Base URL of the running app, e.g. http://localhost:3000 */
   baseURL: string;
-  /** Auth, seeding, navigation to a starting screen. Runs after page creation, before step 1. Excluded from the final video by default. */
-  setup(page: Page, ctx: StepContext): Promise<void>;
+  /**
+   * Auth, seeding, navigation to a starting screen. Runs after page creation,
+   * before step 1. Excluded from the final video by default. Anything it
+   * returns lands on `ctx.state` for `tutorial.setup` and steps to read.
+   */
+  setup(page: Page, ctx: StepContext<S>): Promise<S | void>;
   /** Optional cleanup after recording (delete seeded data, logout). Never recorded. */
-  teardown?(page: Page, ctx: StepContext): Promise<void>;
+  teardown?(page: Page, ctx: StepContext<S>): Promise<void>;
 }
 
-export interface Step {
+export interface Step<S = unknown> {
   /** Stable id, auto-derived from index if omitted. Used in manifest, cache keys, logs, translation tables. */
   id?: string;
   /** The narration line spoken over this step, in the source language. Plain text; may be ''. */
   narration: string;
   /** The action. Receives the raw Playwright Page. May be a no-op for pure-narration steps. */
-  run: (page: Page, ctx: StepContext) => Promise<void>;
+  run: (page: Page, ctx: StepContext<S>) => Promise<void>;
   /** Optional readiness hook awaited after run(); use when auto-waiting isn't enough. */
-  waitFor?: (page: Page, ctx: StepContext) => Promise<void>;
+  waitFor?: (page: Page, ctx: StepContext<S>) => Promise<void>;
   /**
    * Anchor the cursor on a control at the start of the step — smooth-scrolls it
    * into frame and moves the fake cursor there — so narration about "this
@@ -39,25 +58,31 @@ export interface Step {
    * is pure narration. Return the locator to anchor on (may be async).
    * Decorative: a failure here is logged and skipped, never failing the render.
    */
-  focus?: (page: Page, ctx: StepContext) => Locator | Promise<Locator>;
+  focus?: (page: Page, ctx: StepContext<S>) => Locator | Promise<Locator>;
   /**
    * Wait for a real page load-state signal after run()/waitFor() instead of
    * guessing a settleMs — e.g. 'networkidle' to let a router.refresh()'s
    * fetches quiesce. Best-effort and bounded (~5s): a page that never reaches
    * the state (websockets, polling) logs and proceeds rather than failing.
    * Composes with settleMs (which still adds its on-screen hold afterward).
+   *
+   * Caveat: 'networkidle' can resolve in the gap *before* a React
+   * `startTransition`-deferred Server Action dispatches its request, settling on
+   * the pre-mutation UI. For the standard `startTransition` + Server Action +
+   * `router.refresh()` pattern, prefer `waitFor` on the committed UI (the value
+   * flipping, a toast appearing) — see docs/writing-tutorials.md "Settling".
    */
   settleUntil?: 'load' | 'domcontentloaded' | 'networkidle';
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
 }
 
-export interface Tutorial {
+export interface Tutorial<S = unknown> {
   /** Slug, used for output filenames. */
   id: string;
   title: string;
   description?: string;
-  steps: Step[];
+  steps: Step<S>[];
   /**
    * Per-language narration overrides: lang → (step id → translated line).
    * Usually loaded from sidecar files (<tutorial-file>.<lang>.json) by the CLI.
@@ -67,15 +92,16 @@ export interface Tutorial {
    * Per-tutorial setup, run after the adapter's setup() and before step 1 (not
    * recorded). The adapter is the shared auth/seed baseline; this is per-video
    * state — e.g. seed an event for this tutorial only. Optional; tutorials
-   * without it keep working through the adapter alone.
+   * without it keep working through the adapter alone. Reads what the adapter
+   * established via `ctx.state`.
    */
-  setup?(page: Page, ctx: StepContext): Promise<void>;
+  setup?(page: Page, ctx: StepContext<S>): Promise<void>;
   /**
    * Per-tutorial cleanup, run after recording (not recorded) — after any
    * step-registered onTeardown thunks and before the adapter's teardown().
    * Failures are logged, not fatal.
    */
-  teardown?(page: Page, ctx: StepContext): Promise<void>;
+  teardown?(page: Page, ctx: StepContext<S>): Promise<void>;
 }
 
 export interface TTSProvider {

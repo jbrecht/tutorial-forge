@@ -19,8 +19,8 @@ const TTS_RESULT_FILE = 'tts.json';
  * bounded concurrency. Result is persisted to workDir/tts.json so the record
  * phase can re-run without re-synthesizing.
  */
-export async function runTTSPhase(
-  tutorial: Tutorial,
+export async function runTTSPhase<S = unknown>(
+  tutorial: Tutorial<S>,
   opts: { provider: TTSProvider; workDir: string; cacheDir: string; concurrency: number },
 ): Promise<TTSPhaseResult> {
   const audioDir = join(opts.workDir, 'audio');

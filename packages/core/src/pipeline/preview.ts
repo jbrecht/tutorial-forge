@@ -6,7 +6,7 @@ import { localizeTutorial } from '../i18n.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
 import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
 import { instrumentPage } from '../browser/instrument.js';
-import { anchorFocus, createStepContext, runStepTeardowns, waitForSettle } from './step-hooks.js';
+import { anchorFocus, createStepContext, runTeardownChain, waitForSettle } from './step-hooks.js';
 import { ensureDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
 
@@ -49,7 +49,7 @@ export interface PreviewResult {
 }
 
 /** Resolve a "step" argument (1-based index or id) to a 0-based index. */
-export function resolveStepIndex(tutorial: Tutorial, step: string): number {
+export function resolveStepIndex<S = unknown>(tutorial: Tutorial<S>, step: string): number {
   const asNum = /^\d+$/.test(step.trim()) ? parseInt(step.trim(), 10) : null;
   if (asNum !== null) {
     if (asNum < 1 || asNum > tutorial.steps.length) {
@@ -65,9 +65,9 @@ export function resolveStepIndex(tutorial: Tutorial, step: string): number {
   return idx;
 }
 
-export async function previewStep(
-  tutorial: Tutorial,
-  adapter: TutorialAdapter,
+export async function previewStep<S = unknown>(
+  tutorial: Tutorial<S>,
+  adapter: TutorialAdapter<S>,
   opts: PreviewOptions,
 ): Promise<PreviewResult> {
   validateTutorial(tutorial);
@@ -89,41 +89,46 @@ export async function previewStep(
     if (callouts || cursor) await context.addInitScript(CALLOUT_INIT_SCRIPT);
 
     const page = await context.newPage();
-    const { ctx, teardownThunks } = createStepContext(opts.lang);
-    logger.info(`preview: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
-    await adapter.setup(page, ctx);
-    if (tutorial.setup) await tutorial.setup(page, ctx);
+    const { ctx, teardownThunks } = createStepContext<S>(opts.lang);
+    // Full teardown chain (step thunks → tutorial → adapter), run on every exit
+    // path. preview is the fast iterate-on-one-step tool, run repeatedly by
+    // design, so leaving the adapter seed behind each run quietly fills the
+    // shared test DB — exactly what a quick-iteration tool must not do (#16).
+    // Hooks must tolerate the partial, mid-tutorial state preview reaches; each
+    // is guarded, so a teardown that can't run logs rather than failing.
+    try {
+      logger.info(`preview: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
+      const setupState = await adapter.setup(page, ctx);
+      if (setupState != null) ctx.state = setupState as S;
+      if (tutorial.setup) await tutorial.setup(page, ctx);
 
-    // Replay prior steps on the RAW page (no cursor/scroll animation) — we only
-    // need their state, not their framing, so replay stays fast (#11).
-    for (let i = 0; i < target; i++) {
-      const step = tutorial.steps[i]!;
-      logger.info(`preview: replay ${i + 1}/${target} "${stepId(step, i)}"`);
-      await step.run(page, ctx);
-      await step.waitFor?.(page, ctx);
+      // Replay prior steps on the RAW page (no cursor/scroll animation) — we only
+      // need their state, not their framing, so replay stays fast (#11).
+      for (let i = 0; i < target; i++) {
+        const step = tutorial.steps[i]!;
+        logger.info(`preview: replay ${i + 1}/${target} "${stepId(step, i)}"`);
+        await step.run(page, ctx);
+        await step.waitFor?.(page, ctx);
+      }
+
+      // The target step runs instrumented (cursor/callouts/focus), to match a
+      // real render's framing — that's what the screenshot is verifying.
+      const instrumented = instrumentPage(page, { cursor, callouts, nowMs: () => 0, onCallout: () => {} });
+      const step = tutorial.steps[target]!;
+      logger.info(`preview: step ${target + 1}/${tutorial.steps.length} "${id}"`);
+      await anchorFocus(step, instrumented as Page, ctx, id);
+      await step.run(instrumented as Page, ctx);
+      await step.waitFor?.(instrumented as Page, ctx);
+      await waitForSettle(step, page, id);
+      await page.waitForTimeout(opts.settleMs ?? step.settleMs ?? 400);
+
+      await page.screenshot({ path: output });
+      logger.info(`preview: wrote ${output}`);
+
+      return { stepId: id, index: target, screenshot: output };
+    } finally {
+      await runTeardownChain(page, ctx, tutorial, adapter, teardownThunks);
     }
-
-    // The target step runs instrumented (cursor/callouts/focus), to match a
-    // real render's framing — that's what the screenshot is verifying.
-    const instrumented = instrumentPage(page, { cursor, callouts, nowMs: () => 0, onCallout: () => {} });
-    const step = tutorial.steps[target]!;
-    logger.info(`preview: step ${target + 1}/${tutorial.steps.length} "${id}"`);
-    await anchorFocus(step, instrumented as Page, ctx, id);
-    await step.run(instrumented as Page, ctx);
-    await step.waitFor?.(instrumented as Page, ctx);
-    await waitForSettle(step, page, id);
-    await page.waitForTimeout(opts.settleMs ?? step.settleMs ?? 400);
-
-    await page.screenshot({ path: output });
-    logger.info(`preview: wrote ${output}`);
-
-    // Clean up only what the previewed steps registered. Unlike a full render
-    // we do NOT run tutorial/adapter teardown: previewing a mid-tutorial step
-    // reaches partial state, and those hooks assume a complete run (they could
-    // throw or destructively delete shared fixtures a later render needs).
-    await runStepTeardowns(teardownThunks);
-
-    return { stepId: id, index: target, screenshot: output };
   } finally {
     await safeClose(browser.close());
   }

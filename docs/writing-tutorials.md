@@ -67,7 +67,7 @@ After a step's action, the recording needs to wait until the app has visually ca
 | | What it waits on | Use when |
 |---|---|---|
 | **`waitFor`** | A DOM signal you choose (a locator appears, text changes, a spinner detaches) | There's a specific element/state that marks "done". This is the principled default — it waits exactly as long as needed, no more. |
-| **`settleUntil`** | A page load-state signal (`networkidle` / `load` / `domcontentloaded`) | There's *no* clean DOM signal — e.g. a `router.refresh()` that just repaints, or a navigation whose result you don't want to assert on. `'networkidle'` waits for in-flight requests to quiesce. |
+| **`settleUntil`** | A page load-state signal (`networkidle` / `load` / `domcontentloaded`) | There's *no* clean DOM signal — e.g. a `router.refresh()` that just repaints, or a navigation whose result you don't want to assert on. `'networkidle'` waits for in-flight requests to quiesce. **Not** for `startTransition`-deferred Server Actions — see the warning below. |
 | **`settleMs`** | A fixed number of milliseconds | A last resort, or a deliberate on-screen beat *after* readiness (e.g. let an animation finish, or hold the final frame a touch longer). |
 
 Rule of thumb: **if you can name the thing you're waiting for, use `waitFor`.** If the only signal is "the network went quiet," use `settleUntil: 'networkidle'`. Only fall back to `settleMs` for a deliberate pause or when nothing else applies — and keep it small.
@@ -86,6 +86,22 @@ step('The list refreshes with your new row.', async (page) => {
 
 `settleUntil` is **best-effort and bounded** (~5s): a page that never goes idle — websockets, polling, server-sent events — logs and proceeds rather than failing the render, so it's safe to use even when you're not sure the app quiesces. `settleUntil` and `settleMs` compose: the signal-based wait happens first, then `settleMs` adds its on-screen hold.
 
+> **`networkidle` races React `startTransition` — prefer `waitFor` for deferred mutations.** The standard Next.js App Router mutation — a controlled input whose `onChange` runs `startTransition(async () => { await someServerAction(); router.refresh() })` — does **not** dispatch its request synchronously. At the instant your `selectOption`/`click` returns, React hasn't fired the action's fetch yet, so the page is *momentarily* network-idle and `settleUntil: 'networkidle'` can resolve against the **pre-mutation** UI (the screenshot shows the old value). It often lands correctly by luck (the request is usually in flight by the time Playwright polls), but it's timing-dependent. Don't reach for `networkidle` here — wait on the committed result instead:
+>
+> ```ts
+> // ❌ races the transition — can settle before the server action even dispatches
+> step('Switch the status to Tickets open.', async (page) => {
+>   await page.getByLabel('Status').selectOption('open');
+> }, { settleUntil: 'networkidle' })
+>
+> // ✅ wait on the committed UI — exactly as long as the repaint takes, no race
+> step('Switch the status to Tickets open.', async (page) => {
+>   await page.getByLabel('Status').selectOption('open');
+> }, { waitFor: (page) => page.getByText('Tickets open').waitFor() })
+> ```
+>
+> Reserve `settleUntil: 'networkidle'` for cases with no committed-state signal to name — a `router.refresh()`/reload that only repaints existing data, or a navigation whose result you don't assert on.
+
 ## Iterating on a step
 
 A passing render only proves your selectors *resolved* — not that the right thing was on screen. A step that locates a wrong-but-valid element (or one scrolled off-screen) succeeds silently. Two helpers close that gap without re-recording the whole tutorial every cycle:
@@ -99,7 +115,7 @@ tutorial-forge preview set-status --only my-tutorial
 
 > Prior-step state is reached by replaying earlier `run()`/`waitFor()` callbacks in order — exactly what a real render does — so anything those steps set up (navigation, form state, seeded data) is present. Only the target step's `settleMs` hold is honored; intermediate pacing is skipped for speed.
 
-**`tutorial-forge render --contact-sheet`** keeps a settled screenshot per step and emits a labeled grid PNG next to the video (`<name>-contact-sheet.png`), one thumbnail per step tagged with its id and narration. Scan it to confirm every step framed the right thing at a glance, instead of scrubbing the video. Enable it persistently with `contactSheet: true` in `forge.config.ts`.
+**`tutorial-forge render --contact-sheet`** keeps a settled screenshot per step and emits a labeled grid PNG next to the video (`<name>-contact-sheet.png`), one thumbnail per step tagged with its id and narration. Scan it to confirm every step framed the right thing at a glance, instead of scrubbing the video. Enable it persistently with `contactSheet: true` in `forge.config.ts`. If a step fails mid-render, you still get a **partial** sheet of the steps that completed plus the failure frame as the last cell — the at-a-glance view of how the run got to the failure.
 
 ## Timing manifest
 
