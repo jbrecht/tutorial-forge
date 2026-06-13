@@ -56,7 +56,8 @@ program
 
 program
   .command('doctor')
-  .description('check the environment (node, ffmpeg, playwright, TTS env vars)')
+  .description('check the environment (node, ffmpeg, playwright, TTS env vars, app reachability)')
+  .option('--config <path>', 'path to forge.config.ts')
   .action(doctorCommand);
 
 program

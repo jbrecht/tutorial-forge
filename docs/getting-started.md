@@ -13,6 +13,10 @@ You also need `ffmpeg` and `ffprobe` (≥ 6) on PATH. Verify everything with:
 pnpm exec tutorial-forge doctor
 ```
 
+Run this from your project directory so `doctor` can read `forge.config.ts` and probe that the app at your adapter's `baseURL` is up — the most common render failure is simply forgetting to start the dev server.
+
+> **pnpm note:** if `pnpm exec tutorial-forge …` trips pnpm's ignored-builds pre-check, invoke the bin directly (`./node_modules/.bin/tutorial-forge …`) or approve the build with `pnpm approve-builds`.
+
 The binary is also installed under the shorter alias `tforge`.
 
 ## Configure

@@ -64,7 +64,7 @@ Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), k
 ## Requirements
 
 - Node ≥ 20, `ffmpeg`/`ffprobe` ≥ 6 on PATH, Playwright Chromium (`npx playwright install chromium`)
-- Check your environment with `tutorial-forge doctor`
+- Check your environment with `tutorial-forge doctor` — it verifies the toolchain above and, when run from a project, probes that the app at your adapter's `baseURL` is reachable
 
 ## Packages
 

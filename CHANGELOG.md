@@ -18,6 +18,11 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## Unreleased
+
+- `doctor` now probes that the app at your adapter's `baseURL` is reachable when run from a project, turning the most common render failure (forgot to start the dev server) into a clear up-front ✗ instead of a Playwright navigation timeout deep in a render. Accepts `--config <path>`; skips cleanly when no config is found (#12).
+- `idleSpeedup` now logs a one-line summary even when it compresses nothing (`post: idle speed-up — no spans over 2000ms`), so it's observable that it ran (#13).
+
 ## 0.8.0 — screencast recorder
 
 - New `recorder: 'screencast'` (CLI `--recorder screencast`): captures CDP frames with explicit per-frame timestamps instead of Playwright's `recordVideo`. The raw video is clock-aligned by construction — no calibration flash — and frames arrive only when content changes. `'video'` remains the default. Chromium-only (as is the whole pipeline).
