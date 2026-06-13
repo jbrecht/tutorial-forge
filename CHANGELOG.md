@@ -18,7 +18,9 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
-## Unreleased
+## 0.9.0 — authoring loop
+
+Ergonomics from a real-world dogfooding pass (authoring tutorials for the umami app). Additive for normal use — existing tutorials and adapters render unchanged. One type-only caveat: `StepContext` gained a required `onTeardown` method, so if you construct a `StepContext` object literal yourself (e.g. in a test harness) it now needs that field; code that merely *receives* `ctx` in a callback is unaffected.
 
 - New `step(..., { settleUntil })` option (`'networkidle' | 'load' | 'domcontentloaded'`): wait on a real page load-state signal after the action instead of guessing a `settleMs` — e.g. `'networkidle'` to let a `router.refresh()`'s fetches quiesce. Best-effort and bounded (~5s), so a never-idle page (websockets/polling) logs and proceeds rather than hanging; composes with `settleMs`. Docs add a waitFor-vs-settleUntil-vs-settleMs mental model (#14).
 - Tutorials can now declare their own `setup`/`teardown` that **compose with** the adapter's, so two tutorials sharing one adapter can start from different state. Run order is adapter.setup → tutorial.setup in, and step thunks (LIFO) → tutorial.teardown → adapter.teardown out. Existing single-adapter tutorials are unaffected (#8).

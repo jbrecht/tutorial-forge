@@ -21,7 +21,7 @@ if (existsSync(envFile)) {
 
 const program = new Command('tutorial-forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
-  .version('0.8.0');
+  .version('0.9.0');
 
 program
   .command('render')
