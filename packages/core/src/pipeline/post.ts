@@ -94,6 +94,8 @@ export async function runPostPhase(
       logger.info(
         `post: idle speed-up — ${segments.length} span(s) at ${config.speed}x, saving ${savedS.toFixed(1)}s`,
       );
+    } else {
+      logger.info(`post: idle speed-up — no spans over ${config.maxIdleMs}ms`);
     }
   }
   const mapMs = timeMap ? (ms: number) => timeMap!.mapS(ms / 1000) * 1000 : undefined;
