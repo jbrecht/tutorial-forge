@@ -1,5 +1,5 @@
 import type { Page } from 'playwright';
-import type { Step, StepContext } from '../types.js';
+import type { Step, StepContext, Tutorial, TutorialAdapter } from '../types.js';
 import { logger } from '../util/logger.js';
 
 /**
@@ -8,8 +8,8 @@ import { logger } from '../util/logger.js';
  * "cleanup must never throw" rule live in one place.
  */
 
-/** A cleanup callback registered via ctx.onTeardown(). */
-export type TeardownThunk = () => void | Promise<void>;
+/** A cleanup callback registered via ctx.onTeardown(). Its result is awaited and discarded. */
+export type TeardownThunk = () => unknown | Promise<unknown>;
 
 /** Cap on a step's settleUntil wait — bounded so a never-idle page (websockets, polling) can't stall the render. */
 export const SETTLE_TIMEOUT_MS = 5000;
@@ -21,7 +21,7 @@ export const SETTLE_TIMEOUT_MS = 5000;
  * reaches the state (persistent connections) logs and proceeds rather than
  * failing the render.
  */
-export async function waitForSettle(step: Step, page: Page, id: string): Promise<void> {
+export async function waitForSettle(step: Pick<Step, 'settleUntil'>, page: Page, id: string): Promise<void> {
   if (!step.settleUntil) return;
   try {
     await page.waitForLoadState(step.settleUntil, { timeout: SETTLE_TIMEOUT_MS });
@@ -33,9 +33,11 @@ export async function waitForSettle(step: Step, page: Page, id: string): Promise
 }
 
 /** Build a StepContext and the array its onTeardown() pushes into. */
-export function createStepContext(lang?: string): { ctx: StepContext; teardownThunks: TeardownThunk[] } {
+export function createStepContext<S = unknown>(lang?: string): { ctx: StepContext<S>; teardownThunks: TeardownThunk[] } {
   const teardownThunks: TeardownThunk[] = [];
-  const ctx: StepContext = { lang, onTeardown: (fn) => teardownThunks.push(fn) };
+  // state starts as an empty bag so steps can stash live-created ids even when
+  // the adapter returns nothing; adapter.setup's return value replaces it.
+  const ctx: StepContext<S> = { lang, state: {} as S, onTeardown: (fn) => teardownThunks.push(fn) };
   return { ctx, teardownThunks };
 }
 
@@ -54,12 +56,32 @@ export async function runStepTeardowns(thunks: TeardownThunk[]): Promise<void> {
 }
 
 /**
+ * The single teardown entry point, innermost-first: step onTeardown thunks
+ * (LIFO) → tutorial.teardown → adapter.teardown. Every hook is guarded, so a
+ * teardown that runs against half-built state (e.g. after a setup failure)
+ * degrades to a logged warning instead of masking the original error or
+ * leaking. Shared by record, preview, and the doctor setup probe so all three
+ * clean up identically (#15/#16/#19).
+ */
+export async function runTeardownChain<S>(
+  page: Page,
+  ctx: StepContext<S>,
+  tutorial: Pick<Tutorial<S>, 'teardown'>,
+  adapter: Pick<TutorialAdapter<S>, 'teardown'>,
+  teardownThunks: TeardownThunk[],
+): Promise<void> {
+  await runStepTeardowns(teardownThunks);
+  if (tutorial.teardown) await safeTeardown('tutorial teardown', () => tutorial.teardown!(page, ctx));
+  if (adapter.teardown) await safeTeardown('teardown', () => adapter.teardown!(page, ctx));
+}
+
+/**
  * Anchor the cursor on a step's focus control (decorative #10): smooth-scroll
  * the control into frame + move the fake cursor there via the instrumented
  * hover. The focus callback may be sync or async. Never throws — a failure
  * here is logged and skipped, so the render is unaffected.
  */
-export async function anchorFocus(step: Step, page: Page, ctx: StepContext, id: string): Promise<void> {
+export async function anchorFocus<S>(step: Step<S>, page: Page, ctx: StepContext<S>, id: string): Promise<void> {
   if (!step.focus) return;
   try {
     const locator = await step.focus(page, ctx);

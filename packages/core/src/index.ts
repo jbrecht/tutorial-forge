@@ -39,6 +39,7 @@ export {
   type ContactSheetStyle,
 } from './pipeline/contact-sheet.js';
 export { previewStep, type PreviewOptions, type PreviewResult } from './pipeline/preview.js';
+export { probeAdapterSetup } from './pipeline/preflight.js';
 
 export { SilentProvider } from './tts/silent.js';
 export { Piper, type PiperOptions } from './tts/piper.js';

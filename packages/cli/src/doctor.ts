@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { ffmpegVersion } from 'tutorial-forge';
+import { ffmpegVersion, probeAdapterSetup, type ForgeConfig } from 'tutorial-forge';
 import { loadConfig } from './load.js';
 
 interface Check {
@@ -36,7 +36,7 @@ async function probeReachable(baseURL: string, timeoutMs = 3000): Promise<Check>
   }
 }
 
-export async function doctorCommand(opts: { config?: string } = {}): Promise<void> {
+export async function doctorCommand(opts: { config?: string; setup?: boolean } = {}): Promise<void> {
   const checks: Check[] = [];
 
   const nodeMajor = parseInt(process.versions.node.split('.')[0]!, 10);
@@ -81,15 +81,41 @@ export async function doctorCommand(opts: { config?: string } = {}): Promise<voi
   // App reachability: only when we can resolve a baseURL from the config.
   // A missing/broken config is the render command's problem to report, not
   // doctor's — here it just means we skip the probe rather than fail.
+  let config: ForgeConfig | null = null;
   try {
-    const config = await loadConfig(process.cwd(), opts.config);
-    checks.push(await probeReachable(config.adapter.baseURL));
+    config = await loadConfig(process.cwd(), opts.config);
   } catch {
+    /* no config — handled below */
+  }
+  if (config) {
+    checks.push(await probeReachable(config.adapter.baseURL));
+  } else {
     checks.push({
       name: 'app reachable',
       ok: true,
       detail: 'skipped (no forge.config found — run from a project to probe baseURL)',
     });
+  }
+
+  // Opt-in (--setup): actually run adapter.setup and tear it down, catching the
+  // wrong-database / unseedable-target class of failure that a reachable but
+  // mispointed dev server hides behind a green check. Off by default because it
+  // seeds + signs in for real (#19).
+  if (opts.setup) {
+    if (config) {
+      try {
+        await probeAdapterSetup(config.adapter);
+        checks.push({ name: 'adapter.setup', ok: true, detail: 'ran and tore down cleanly' });
+      } catch (err) {
+        checks.push({
+          name: 'adapter.setup',
+          ok: false,
+          detail: `${err instanceof Error ? err.message : String(err)} — is the dev server pointed at the right database?`,
+        });
+      }
+    } else {
+      checks.push({ name: 'adapter.setup', ok: true, detail: 'skipped (no forge.config found)' });
+    }
   }
 
   let failed = false;

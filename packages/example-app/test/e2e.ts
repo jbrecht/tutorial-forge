@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
-import { render, previewStep, probeDurationMs, detectFlashOffsetMs, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
+import { render, previewStep, probeAdapterSetup, probeDurationMs, detectFlashOffsetMs, contactSheetPath, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
 // Internal (not public API) — exercised from source under tsx for #10 coverage.
 import { instrumentPage } from '../../core/src/browser/instrument.ts';
 import { CURSOR_INIT_SCRIPT } from '../../core/src/browser/cursor.ts';
@@ -350,6 +350,167 @@ try {
     'onTeardown thunks + tutorial.teardown run even when a later step fails',
   );
   console.log(`e2e OK [failure]: StepError + teardown ran (${cleanedUpOnFailure.join(', ')})`);
+
+  // #17 — ctx.state: adapter.setup's return lands on ctx.state, typed end-to-end
+  // (TutorialAdapter<S> → tutorial<S> → step<S>), so tutorial.setup and steps
+  // read what the adapter established without a module-global + `!` handoff, and
+  // a step can stash a live-created id on it for its own onTeardown.
+  {
+    interface Seed { token: string }
+    const seen: Record<string, unknown> = {};
+    const stateAdapter: TutorialAdapter<Seed> = {
+      baseURL,
+      async setup(page) {
+        await page.goto(baseURL);
+        await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
+        return { token: 'seed-123' }; // becomes ctx.state
+      },
+    };
+    const stateTut = tutorial<Seed>('State', [
+      step<Seed>('Read adapter state; stash a live id.', async (_page, ctx) => {
+        seen.stepSaw = ctx.state.token; // typed: ctx.state is Seed, no assertion
+        ctx.state.token = 'mutated-by-step';
+        ctx.onTeardown(() => { seen.teardownSaw = ctx.state.token; });
+      }, { id: 'use-state' }),
+    ], {
+      id: 'state-demo',
+      async setup(_page, ctx) { seen.tutorialSetupSaw = ctx.state.token; },
+    });
+    await render(stateTut, stateAdapter, {
+      tts: SilentProvider(),
+      output: join(outDir, 'state.mp4'),
+      workDir: join(outDir, 'work-state'),
+      ttsCacheDir: join(outDir, 'tts-cache'),
+    });
+    assert.equal(seen.tutorialSetupSaw, 'seed-123', 'tutorial.setup reads adapter state via ctx.state');
+    assert.equal(seen.stepSaw, 'seed-123', 'step reads adapter state via ctx.state');
+    assert.equal(seen.teardownSaw, 'mutated-by-step', 'onTeardown sees step mutations to ctx.state');
+    console.log('e2e OK [ctx.state]: adapter → tutorial.setup → step → onTeardown handoff');
+  }
+
+  // #15 — a throw in tutorial.setup must still run the FULL teardown chain, so
+  // data seeded (and any ctx.onTeardown registered) before the throw is cleaned
+  // up. Previously teardown ran only on a step failure or a clean finish, so a
+  // setup-phase throw silently leaked everything seeded so far.
+  {
+    const cleaned: string[] = [];
+    const failAdapter: TutorialAdapter = {
+      baseURL,
+      async setup(page, ctx) {
+        await page.goto(baseURL);
+        await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
+        ctx.onTeardown(() => { cleaned.push('adapter.onTeardown'); }); // seeded-in-setup cleanup
+      },
+      async teardown() { cleaned.push('adapter.teardown'); },
+    };
+    const failTut = tutorial('SetupFail', [step('never runs', async () => {}, { id: 'noop' })], {
+      id: 'setup-fail',
+      async setup() { throw new Error('seed warm-up timed out'); },
+      async teardown() { cleaned.push('tutorial.teardown'); },
+    });
+    let setupErr: Error | null = null;
+    try {
+      await render(failTut, failAdapter, {
+        tts: SilentProvider(),
+        output: join(outDir, 'setup-fail.mp4'),
+        workDir: join(outDir, 'work-setup-fail'),
+        ttsCacheDir: join(outDir, 'tts-cache'),
+      });
+    } catch (err) {
+      setupErr = err as Error;
+    }
+    assert.ok(setupErr && /seed warm-up timed out/.test(setupErr.message), 'setup failure propagates');
+    assert.deepEqual(
+      cleaned,
+      ['adapter.onTeardown', 'tutorial.teardown', 'adapter.teardown'],
+      'setup-phase failure runs the full teardown chain — no seeded-data leak (#15)',
+    );
+    console.log(`e2e OK [setup-fail]: teardown ran on setup failure (${cleaned.join(', ')})`);
+  }
+
+  // #16 — preview must run the FULL teardown chain (incl. adapter.teardown), not
+  // just step thunks. preview is the run-repeatedly iterate tool, so leaking the
+  // adapter seed each run quietly fills the shared test DB.
+  {
+    const cleaned: string[] = [];
+    const previewAdapter: TutorialAdapter = {
+      baseURL,
+      async setup(page) {
+        await page.goto(baseURL);
+        await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
+      },
+      async teardown() { cleaned.push('adapter.teardown'); },
+    };
+    const previewTut = tutorial('PreviewTeardown', [
+      step('Seed a row.', async (_p, ctx) => { ctx.onTeardown(() => { cleaned.push('step.teardown'); }); }, { id: 'seed' }),
+      step('Target.', async () => {}, { id: 'target' }),
+    ], { id: 'preview-teardown', async teardown() { cleaned.push('tutorial.teardown'); } });
+    await previewStep(previewTut, previewAdapter, {
+      step: 'target',
+      workDir: join(outDir, 'preview-td'),
+      output: join(outDir, 'preview-td.png'),
+    });
+    assert.deepEqual(
+      cleaned,
+      ['step.teardown', 'tutorial.teardown', 'adapter.teardown'],
+      'preview runs the full teardown chain — no adapter-seed leak (#16)',
+    );
+    console.log(`e2e OK [preview-teardown]: ${cleaned.join(', ')}`);
+  }
+
+  // #19 — probeAdapterSetup actually runs adapter.setup (and tears it down),
+  // surfacing the wrong-database class of failure that a reachable-but-mispointed
+  // server hides behind a green check. It must tear down even when setup throws.
+  {
+    await probeAdapterSetup(adapter); // the working adapter resolves cleanly
+    const cleaned: string[] = [];
+    const badAdapter: TutorialAdapter = {
+      baseURL,
+      async setup(_page, ctx) {
+        ctx.onTeardown(() => { cleaned.push('cleaned'); });
+        throw new Error('sign-in failed: steward not found (wrong database?)');
+      },
+      async teardown() { cleaned.push('adapter.teardown'); },
+    };
+    let probeErr: Error | null = null;
+    try {
+      await probeAdapterSetup(badAdapter);
+    } catch (err) {
+      probeErr = err as Error;
+    }
+    assert.ok(probeErr && /wrong database/.test(probeErr.message), 'probeAdapterSetup surfaces a setup failure (#19)');
+    assert.deepEqual(cleaned, ['cleaned', 'adapter.teardown'], 'probe tears down even when setup throws');
+    console.log('e2e OK [probe-setup]: success resolves; failure surfaces + tears down');
+  }
+
+  // #20 — a failed render with contactSheet on still emits a PARTIAL contact
+  // sheet (completed steps + the failure frame), the at-a-glance view you most
+  // want for a failing run — the post phase that normally builds it never runs.
+  {
+    const partialBroken = tutorial('PartialBroken', [
+      step('First step succeeds.', async () => {}, { id: 'ok-1' }),
+      step('Second step succeeds.', async () => {}, { id: 'ok-2' }),
+      step('Third step fails.', async (page) => {
+        await page.getByRole('button', { name: 'No Such Button' }).click({ timeout: 1000 });
+      }, { id: 'boom' }),
+    ], { id: 'partial-broken' });
+    const partialOutput = join(outDir, 'partial-broken.mp4');
+    let perr: StepError | null = null;
+    try {
+      await render(partialBroken, adapter, {
+        tts: SilentProvider(),
+        output: partialOutput,
+        workDir: join(outDir, 'work-partial'),
+        ttsCacheDir: join(outDir, 'tts-cache'),
+        contactSheet: true,
+      });
+    } catch (err) {
+      perr = err as StepError;
+    }
+    assert.ok(perr instanceof StepError && perr.stepId === 'boom', 'partial render failed at the bad step');
+    assert.ok(existsSync(contactSheetPath(partialOutput)), 'partial contact sheet emitted on step failure (#20)');
+    console.log(`e2e OK [partial-sheet]: ${contactSheetPath(partialOutput)}`);
+  }
 } finally {
   await close();
 }

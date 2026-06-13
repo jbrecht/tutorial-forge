@@ -6,7 +6,7 @@ import type { CalloutRecord, FailureArtifacts, TimingManifest, Tutorial, Tutoria
 import { StepError } from '../types.js';
 import { ConsoleCapture } from '../browser/console.js';
 import { stepId } from '../spec.js';
-import { anchorFocus, createStepContext, runStepTeardowns, safeTeardown, waitForSettle } from './step-hooks.js';
+import { anchorFocus, createStepContext, runTeardownChain, waitForSettle } from './step-hooks.js';
 import type { TTSPhaseResult } from './tts.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
 import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
@@ -48,9 +48,9 @@ export interface RecordPhaseOptions {
  * video, pacing each step to its narration budget. Writes raw.webm and
  * manifest.json into workDir.
  */
-export async function runRecordPhase(
-  tutorial: Tutorial,
-  adapter: TutorialAdapter,
+export async function runRecordPhase<S = unknown>(
+  tutorial: Tutorial<S>,
+  adapter: TutorialAdapter<S>,
   tts: TTSPhaseResult,
   opts: RecordPhaseOptions,
 ): Promise<TimingManifest> {
@@ -108,20 +108,28 @@ export async function runRecordPhase(
     }
 
     // Step-registered cleanup thunks (ctx.onTeardown), run LIFO at teardown.
-    const { ctx, teardownThunks } = createStepContext(opts.lang);
+    const { ctx, teardownThunks } = createStepContext<S>(opts.lang);
     // Teardown, innermost-first: step thunks (LIFO) → tutorial → adapter. Runs
-    // on both the success and failure paths so data created before a failing
-    // step is still cleaned up (the orphan-leak #8 set out to fix).
-    const runTeardown = async () => {
-      await runStepTeardowns(teardownThunks);
-      if (tutorial.teardown) await safeTeardown('tutorial teardown', () => tutorial.teardown!(page, ctx));
-      if (adapter.teardown) await safeTeardown('teardown', () => adapter.teardown!(page, ctx));
-    };
+    // on the success, step-failure, AND setup-failure paths so data created
+    // before any throw is still cleaned up (the orphan-leak #8 set out to fix).
+    const runTeardown = () => runTeardownChain(page, ctx, tutorial, adapter, teardownThunks);
     logger.info(`record: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
-    await adapter.setup(page, ctx);
-    if (tutorial.setup) {
-      logger.info('record: tutorial setup');
-      await tutorial.setup(page, ctx);
+    try {
+      // adapter.setup's return value (if any) is the per-render state bag that
+      // tutorial.setup and steps read via ctx.state (#17).
+      const setupState = await adapter.setup(page, ctx);
+      if (setupState != null) ctx.state = setupState as S;
+      if (tutorial.setup) {
+        logger.info('record: tutorial setup');
+        await tutorial.setup(page, ctx);
+      }
+    } catch (cause) {
+      // A throw in setup (flaky signIn, warm-up goto timeout) must still tear
+      // down anything seeded/registered before it — otherwise ctx.onTeardown in
+      // setup is a no-op on the most leak-prone path (#15).
+      await runTeardown();
+      await safeClose(context.close());
+      throw cause;
     }
     // The final video begins leadInMs before step 1. Hold past that window
     // now so it shows the settled app, not the tail end of setup.
@@ -226,7 +234,7 @@ async function launchChromium(headless: boolean): Promise<Browser> {
 }
 
 async function saveManifest(
-  tutorial: Tutorial,
+  tutorial: Pick<Tutorial, 'id'>,
   clock: RecordingClock,
   steps: TimingManifest['steps'],
   workDir: string,

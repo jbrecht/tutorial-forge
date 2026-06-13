@@ -18,6 +18,27 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## 0.10.0 — teardown safety & authoring state
+
+A second dogfooding pass (umami again, on 0.9.0) surfaced a cluster of setup/teardown lifecycle gaps and the ergonomic hole the new per-tutorial setup opened. Additive for normal use — existing tutorials and adapters render unchanged. One type-only caveat: `StepContext` gained a required `state` field, so if you construct a `StepContext` object literal yourself (e.g. a test harness) it now needs that field; code that merely *receives* `ctx` in a callback is unaffected.
+
+Bug fixes (teardown coverage):
+
+- **Setup-phase failures no longer leak.** A throw in `adapter.setup` or `tutorial.setup` now runs the full teardown chain (step `onTeardown` thunks → `tutorial.teardown` → `adapter.teardown`) before rethrowing, instead of only `browser.close()`. `ctx.onTeardown` registered inside a `setup()` now means what it looks like it means, on the path most likely to seed-then-throw (a flaky sign-in, a warm-up `goto` timeout) (#15).
+- **`preview` no longer leaks the adapter seed.** It now runs the *full* teardown chain on every exit path, not just the step thunks. `preview` is the run-repeatedly iterate tool, so the previous behavior (clean up step data, leak the adapter seed) quietly filled a shared test DB. Teardown hooks should tolerate the partial, mid-tutorial state `preview` reaches (#16).
+- **Partial contact sheet on failure.** A failed render with `--contact-sheet`/`contactSheet` now emits a partial sheet of the steps that completed plus the failure frame as the last cell, instead of nothing — the at-a-glance view you most want for a failing run (#20).
+- The `ctx.onTeardown` callback return type is widened to `() => unknown | Promise<unknown>` (the result is awaited and discarded), so value-returning cleanups like `() => Promise.all(...)` typecheck without a wrapper (#21).
+
+New (additive API):
+
+- **`ctx.state` — a typed, per-render state channel.** `adapter.setup`'s return value lands on `ctx.state`, which `tutorial.setup` and steps read — replacing the module-global + `!`-assertion handoff with something scoped to one render (parallel-safe). Steps can also stash a live-created id on it for their own `onTeardown`. Typed end-to-end via `TutorialAdapter<S>` / `tutorial<S>` / `step<S>` (#17).
+- **`tutorial-forge doctor --setup`** actually runs `adapter.setup` once and tears it down, catching the "reachable but pointed at the wrong database" class of failure — a green reachability check followed by a guaranteed sign-in failure — before you wait out a whole render. Exposed programmatically as `probeAdapterSetup(adapter)`. Off by default (it seeds + signs in for real) (#19).
+
+Docs:
+
+- The "Settling" section now warns that `settleUntil: 'networkidle'` races React `startTransition`-deferred Server Actions (the standard Next.js App Router mutation) and steers those to `waitFor` on the committed UI (#18).
+- Adapters docs gain a `ctx.state` section and a teardown-coverage matrix spelling out which hooks run on each path — clean finish, step failure, setup failure, `preview`, `doctor --setup` (#23).
+
 ## 0.9.0 — authoring loop
 
 Ergonomics from a real-world dogfooding pass (authoring tutorials for the umami app). Additive for normal use — existing tutorials and adapters render unchanged. One type-only caveat: `StepContext` gained a required `onTeardown` method, so if you construct a `StepContext` object literal yourself (e.g. in a test harness) it now needs that field; code that merely *receives* `ctx` in a callback is unaffected.

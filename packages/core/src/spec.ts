@@ -6,19 +6,19 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 // another TTS system; providers read them literally, so warn at load time.
 const SUSPICIOUS_NARRATION_RE = /<[a-z][^>]*>|[\x00-\x08\x0b\x0c\x0e-\x1f]/i;
 
-export function step(narration: string, run: Step['run'], opts?: Partial<Step>): Step {
+export function step<S = unknown>(narration: string, run: Step<S>['run'], opts?: Partial<Step<S>>): Step<S> {
   return { narration, run, ...opts };
 }
 
-export function tutorial(idOrTitle: string, steps: Step[], meta?: Partial<Tutorial>): Tutorial {
+export function tutorial<S = unknown>(idOrTitle: string, steps: Step<S>[], meta?: Partial<Tutorial<S>>): Tutorial<S> {
   const id = meta?.id ?? slugify(idOrTitle);
   const title = meta?.title ?? idOrTitle;
-  const t: Tutorial = { ...meta, id, title, steps };
+  const t: Tutorial<S> = { ...meta, id, title, steps };
   validateTutorial(t);
   return t;
 }
 
-export function validateTutorial(t: Tutorial): void {
+export function validateTutorial<S = unknown>(t: Tutorial<S>): void {
   if (!t.id || !SLUG_RE.test(t.id)) {
     throw new Error(`Tutorial id "${t.id}" must be a lowercase slug (a-z, 0-9, hyphens)`);
   }
@@ -60,7 +60,7 @@ export function validateTutorial(t: Tutorial): void {
 }
 
 /** Resolve a step's stable id: explicit id, or its zero-padded index. */
-export function stepId(s: Step, index: number): string {
+export function stepId(s: Pick<Step, 'id'>, index: number): string {
   return s.id ?? `step-${String(index + 1).padStart(2, '0')}`;
 }
 

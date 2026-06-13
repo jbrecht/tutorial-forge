@@ -1,6 +1,6 @@
 {
   "name": "tutorial-forge",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Turn scripted Playwright walkthroughs into narrated tutorial videos (MP4). Tutorials are source code: re-render instead of re-recording when your UI changes.",
   "type": "module",
   "license": "MIT",
