@@ -36,10 +36,10 @@ export interface Step {
    * Anchor the cursor on a control at the start of the step — smooth-scrolls it
    * into frame and moves the fake cursor there — so narration about "this
    * control" has a visual focus even when the step's action is elsewhere or it
-   * is pure narration. Return the locator to anchor on. Decorative: a failure
-   * here is logged and skipped, never failing the render.
+   * is pure narration. Return the locator to anchor on (may be async).
+   * Decorative: a failure here is logged and skipped, never failing the render.
    */
-  focus?: (page: Page, ctx: StepContext) => Locator;
+  focus?: (page: Page, ctx: StepContext) => Locator | Promise<Locator>;
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
 }

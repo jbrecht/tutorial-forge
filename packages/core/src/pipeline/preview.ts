@@ -1,11 +1,12 @@
 import { resolve, dirname } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
-import type { StepContext, Tutorial, TutorialAdapter } from '../types.js';
+import type { Tutorial, TutorialAdapter } from '../types.js';
 import { validateTutorial, stepId } from '../spec.js';
 import { localizeTutorial } from '../i18n.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
 import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
 import { instrumentPage } from '../browser/instrument.js';
+import { anchorFocus, createStepContext, runStepTeardowns } from './step-hooks.js';
 import { ensureDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
 
@@ -88,41 +89,26 @@ export async function previewStep(
     if (callouts || cursor) await context.addInitScript(CALLOUT_INIT_SCRIPT);
 
     const page = await context.newPage();
-    const teardownThunks: Array<() => void | Promise<void>> = [];
-    const ctx: StepContext = {
-      lang: opts.lang,
-      onTeardown: (fn) => teardownThunks.push(fn),
-    };
+    const { ctx, teardownThunks } = createStepContext(opts.lang);
     logger.info(`preview: setup (${adapter.baseURL})${opts.lang ? ` [${opts.lang}]` : ''}`);
     await adapter.setup(page, ctx);
     if (tutorial.setup) await tutorial.setup(page, ctx);
 
-    // Instrument so cursor/callouts render exactly as in a real recording.
-    const instrumented = instrumentPage(page, {
-      cursor,
-      callouts,
-      nowMs: () => 0,
-      onCallout: () => {},
-    });
-
-    // Replay prior steps to reach the target's starting state (no pacing).
+    // Replay prior steps on the RAW page (no cursor/scroll animation) — we only
+    // need their state, not their framing, so replay stays fast (#11).
     for (let i = 0; i < target; i++) {
       const step = tutorial.steps[i]!;
       logger.info(`preview: replay ${i + 1}/${target} "${stepId(step, i)}"`);
-      await step.run(instrumented as Page, ctx);
-      await step.waitFor?.(instrumented as Page, ctx);
+      await step.run(page, ctx);
+      await step.waitFor?.(page, ctx);
     }
 
-    // Run the target step itself (with its focus anchor, to match a real render).
+    // The target step runs instrumented (cursor/callouts/focus), to match a
+    // real render's framing — that's what the screenshot is verifying.
+    const instrumented = instrumentPage(page, { cursor, callouts, nowMs: () => 0, onCallout: () => {} });
     const step = tutorial.steps[target]!;
     logger.info(`preview: step ${target + 1}/${tutorial.steps.length} "${id}"`);
-    if (step.focus) {
-      try {
-        await step.focus(instrumented as Page, ctx).hover();
-      } catch (err) {
-        logger.debug(`focus anchor skipped for "${id}": ${err instanceof Error ? err.message : err}`);
-      }
-    }
+    await anchorFocus(step, instrumented as Page, ctx, id);
     await step.run(instrumented as Page, ctx);
     await step.waitFor?.(instrumented as Page, ctx);
     await page.waitForTimeout(opts.settleMs ?? step.settleMs ?? 400);
@@ -130,18 +116,11 @@ export async function previewStep(
     await page.screenshot({ path: output });
     logger.info(`preview: wrote ${output}`);
 
-    // Clean up like a real render: step thunks (LIFO) → tutorial → adapter,
-    // so a preview that creates data doesn't leak it into later runs.
-    const cleanup = async (label: string, fn: () => void | Promise<void>) => {
-      try {
-        await fn();
-      } catch (err) {
-        logger.debug(`${label} skipped: ${err instanceof Error ? err.message : err}`);
-      }
-    };
-    for (const fn of teardownThunks.reverse()) await cleanup('step teardown', fn);
-    if (tutorial.teardown) await cleanup('tutorial teardown', () => tutorial.teardown!(page, ctx));
-    if (adapter.teardown) await cleanup('teardown', () => adapter.teardown!(page, ctx));
+    // Clean up only what the previewed steps registered. Unlike a full render
+    // we do NOT run tutorial/adapter teardown: previewing a mid-tutorial step
+    // reaches partial state, and those hooks assume a complete run (they could
+    // throw or destructively delete shared fixtures a later render needs).
+    await runStepTeardowns(teardownThunks);
 
     return { stepId: id, index: target, screenshot: output };
   } finally {

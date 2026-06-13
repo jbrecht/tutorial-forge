@@ -46,7 +46,7 @@ export default tutorial('Create your first event', steps, {
 });
 ```
 
-Run order is **adapter.setup → tutorial.setup** going in, and **step `onTeardown` thunks (LIFO) → tutorial.teardown → adapter.teardown** coming out. Tutorials without hooks keep working through the adapter alone.
+Run order is **adapter.setup → tutorial.setup** going in, and **step `onTeardown` thunks (LIFO) → tutorial.teardown → adapter.teardown** coming out. Teardown runs even when a step fails mid-render, so data created before the failure is still cleaned up. Tutorials without hooks keep working through the adapter alone.
 
 For data a *step* creates mid-tutorial, register cleanup inline with `ctx.onTeardown()` instead of tracking it in the adapter:
 

@@ -15,6 +15,7 @@ import { render, previewStep, probeDurationMs, detectFlashOffsetMs, SilentProvid
 import { instrumentPage } from '../../core/src/browser/instrument.ts';
 import { CURSOR_INIT_SCRIPT } from '../../core/src/browser/cursor.ts';
 import { CALLOUT_INIT_SCRIPT } from '../../core/src/browser/callout.ts';
+import { anchorFocus, createStepContext } from '../../core/src/pipeline/step-hooks.ts';
 import { startServer } from '../src/server.ts';
 import gettingStarted from '../tutorials/getting-started.tutorial.ts';
 
@@ -198,7 +199,8 @@ try {
           window.scrollTo(0, 0);
         });
       }, { id: 'add' }),
-      step('This control matters.', async () => {}, { id: 'narrate', focus: (p) => p.locator('#focus-anchor') }),
+      // async focus (authors naturally write it async) must still anchor.
+      step('This control matters.', async () => {}, { id: 'narrate', focus: async (p) => p.locator('#focus-anchor') }),
     ], { id: 'focus-demo' });
     const focusPreview = await previewStep(focusTut, adapter, {
       step: 'narrate',
@@ -208,6 +210,40 @@ try {
     });
     assert.ok(existsSync(focusPreview.screenshot), 'focus-anchored preview screenshot exists');
     console.log(`e2e OK [focus]: pure-narration step anchored without error → ${focusPreview.screenshot}`);
+  }
+
+  // #10 follow-up — an ASYNC focus callback must resolve and still scroll the
+  // anchor into view (a sync-only call site would TypeError on the Promise and
+  // silently skip the anchor).
+  {
+    const browser = await chromium.launch();
+    try {
+      const bctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+      await bctx.addInitScript(CURSOR_INIT_SCRIPT);
+      await bctx.addInitScript(CALLOUT_INIT_SCRIPT);
+      const page = await bctx.newPage();
+      await page.goto(baseURL);
+      await page.evaluate(() => {
+        const above = Object.assign(document.createElement('div'), { style: 'height:3000px' });
+        const anchor = Object.assign(document.createElement('div'), { id: 'async-anchor', textContent: 'A', tabIndex: 0 });
+        const below = Object.assign(document.createElement('div'), { style: 'height:3000px' });
+        document.body.append(above, anchor, below);
+        window.scrollTo(0, 0);
+      });
+      const instrumented = instrumentPage(page, { cursor: true, callouts: true, nowMs: () => 0, onCallout: () => {} });
+      const { ctx } = createStepContext();
+      await anchorFocus(
+        { narration: '', run: async () => {}, focus: async (p) => p.locator('#async-anchor') },
+        instrumented,
+        ctx,
+        'async',
+      );
+      const box = await page.locator('#async-anchor').boundingBox();
+      assert.ok(box && box.y >= 0 && box.y <= 720, `async focus scrolled the anchor into view (y=${box?.y.toFixed(0)})`);
+      console.log(`e2e OK [async-focus]: async focus resolved + scrolled anchor to y=${box!.y.toFixed(0)}`);
+    } finally {
+      await browser.close();
+    }
   }
 
   // #8 — per-tutorial setup/teardown + ctx.onTeardown compose with the adapter.
@@ -254,13 +290,21 @@ try {
   }
 
   // Failure path: a broken step in debug mode must throw StepError with
-  // screenshot, console log, and trace artifacts in a kept work dir.
+  // screenshot, console log, and trace artifacts in a kept work dir. Cleanup
+  // registered before the failing step must still run (no orphan leak, #8).
+  const cleanedUpOnFailure: string[] = [];
   const broken = tutorial('Broken', [
+    step('A step that seeds data.', async (_page, ctx) => {
+      ctx.onTeardown(() => { cleanedUpOnFailure.push('step.teardown'); });
+    }, { id: 'seed' }),
     step('This click will fail.', async (page) => {
       await page.evaluate(() => console.error('app exploded'));
       await page.getByRole('button', { name: 'No Such Button' }).click({ timeout: 1500 });
     }, { id: 'bad-click' }),
-  ], { id: 'broken' });
+  ], {
+    id: 'broken',
+    async teardown() { cleanedUpOnFailure.push('tutorial.teardown'); },
+  });
   let failure: StepError | null = null;
   try {
     await render(broken, adapter, {
@@ -282,7 +326,12 @@ try {
     'console log captured the page error',
   );
   assert.ok(failure.artifacts?.trace && existsSync(failure.artifacts.trace), 'debug trace exists');
-  console.log(`e2e OK [failure]: StepError with artifacts in ${failure.artifacts!.workDir}`);
+  assert.deepEqual(
+    cleanedUpOnFailure,
+    ['step.teardown', 'tutorial.teardown'],
+    'onTeardown thunks + tutorial.teardown run even when a later step fails',
+  );
+  console.log(`e2e OK [failure]: StepError + teardown ran (${cleanedUpOnFailure.join(', ')})`);
 } finally {
   await close();
 }
