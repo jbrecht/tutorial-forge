@@ -11,6 +11,27 @@ import { logger } from '../util/logger.js';
 /** A cleanup callback registered via ctx.onTeardown(). */
 export type TeardownThunk = () => void | Promise<void>;
 
+/** Cap on a step's settleUntil wait — bounded so a never-idle page (websockets, polling) can't stall the render. */
+export const SETTLE_TIMEOUT_MS = 5000;
+
+/**
+ * Wait for a real load-state signal (step.settleUntil) instead of a fixed
+ * settleMs guess — e.g. 'networkidle' to let a router.refresh()'s fetches
+ * quiesce (#14). Best-effort: bounded and never throws, so a page that never
+ * reaches the state (persistent connections) logs and proceeds rather than
+ * failing the render.
+ */
+export async function waitForSettle(step: Step, page: Page, id: string): Promise<void> {
+  if (!step.settleUntil) return;
+  try {
+    await page.waitForLoadState(step.settleUntil, { timeout: SETTLE_TIMEOUT_MS });
+  } catch (err) {
+    logger.debug(
+      `settleUntil '${step.settleUntil}' not reached within ${SETTLE_TIMEOUT_MS}ms for "${id}" — proceeding: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
 /** Build a StepContext and the array its onTeardown() pushes into. */
 export function createStepContext(lang?: string): { ctx: StepContext; teardownThunks: TeardownThunk[] } {
   const teardownThunks: TeardownThunk[] = [];

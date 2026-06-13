@@ -56,6 +56,18 @@ describe('tutorial()', () => {
       tutorial('x', [step('a', noop)], { setup: noop, teardown: noop }),
     ).not.toThrow();
   });
+
+  it('rejects an invalid settleUntil', () => {
+    expect(() =>
+      tutorial('x', [step('a', noop, { settleUntil: 'idle' as unknown as 'networkidle' })]),
+    ).toThrow(/step 0: settleUntil must be/);
+  });
+
+  it('accepts the valid settleUntil values', () => {
+    for (const v of ['load', 'domcontentloaded', 'networkidle'] as const) {
+      expect(() => tutorial('x', [step('a', noop, { settleUntil: v })])).not.toThrow();
+    }
+  });
 });
 
 describe('stepId', () => {

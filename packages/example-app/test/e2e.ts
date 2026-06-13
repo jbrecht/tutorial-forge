@@ -246,6 +246,24 @@ try {
     }
   }
 
+  // #14 — settleUntil: 'networkidle' waits on a real signal (in-flight fetch
+  // quiescing) instead of a magic settleMs, and resolves rather than hanging.
+  {
+    const settleTut = tutorial('Settle', [
+      step('Trigger a fetch then settle on networkidle.', async (p) => {
+        await p.evaluate(() => { void fetch(location.href).then((r) => r.text()); });
+      }, { id: 'fetch', settleUntil: 'networkidle' }),
+    ], { id: 'settle-demo' });
+    const settlePreview = await previewStep(settleTut, adapter, {
+      step: 'fetch',
+      workDir: join(outDir, 'settle'),
+      output: join(outDir, 'settle.png'),
+      viewport: { width: 1280, height: 720 },
+    });
+    assert.ok(existsSync(settlePreview.screenshot), 'settleUntil step rendered a screenshot');
+    console.log(`e2e OK [settleUntil]: networkidle settle resolved → ${settlePreview.screenshot}`);
+  }
+
   // #8 — per-tutorial setup/teardown + ctx.onTeardown compose with the adapter.
   // Setup runs adapter→tutorial; teardown runs step-thunks (LIFO)→tutorial→adapter.
   {

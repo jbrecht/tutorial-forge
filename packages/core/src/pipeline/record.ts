@@ -6,7 +6,7 @@ import type { CalloutRecord, FailureArtifacts, TimingManifest, Tutorial, Tutoria
 import { StepError } from '../types.js';
 import { ConsoleCapture } from '../browser/console.js';
 import { stepId } from '../spec.js';
-import { anchorFocus, createStepContext, runStepTeardowns, safeTeardown } from './step-hooks.js';
+import { anchorFocus, createStepContext, runStepTeardowns, safeTeardown, waitForSettle } from './step-hooks.js';
 import type { TTSPhaseResult } from './tts.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
 import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
@@ -159,6 +159,7 @@ export async function runRecordPhase(
         await anchorFocus(step, instrumented as Page, ctx, id);
         await step.run(instrumented as Page, ctx);
         await step.waitFor?.(instrumented as Page, ctx);
+        await waitForSettle(step, page, id);
       } catch (cause) {
         const artifacts = await captureFailure(page, context, opts, id, consoleLog);
         await saveManifest(tutorial, clock, manifestSteps, opts.workDir, opts.lang);

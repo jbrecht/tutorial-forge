@@ -40,6 +40,14 @@ export interface Step {
    * Decorative: a failure here is logged and skipped, never failing the render.
    */
   focus?: (page: Page, ctx: StepContext) => Locator | Promise<Locator>;
+  /**
+   * Wait for a real page load-state signal after run()/waitFor() instead of
+   * guessing a settleMs — e.g. 'networkidle' to let a router.refresh()'s
+   * fetches quiesce. Best-effort and bounded (~5s): a page that never reaches
+   * the state (websockets, polling) logs and proceeds rather than failing.
+   * Composes with settleMs (which still adds its on-screen hold afterward).
+   */
+  settleUntil?: 'load' | 'domcontentloaded' | 'networkidle';
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
 }

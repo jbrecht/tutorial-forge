@@ -41,6 +41,11 @@ export function validateTutorial(t: Tutorial): void {
     if (s.focus != null && typeof s.focus !== 'function') {
       throw new Error(`Tutorial "${t.id}" step ${i}: focus must be a function returning a locator`);
     }
+    if (s.settleUntil != null && !['load', 'domcontentloaded', 'networkidle'].includes(s.settleUntil)) {
+      throw new Error(
+        `Tutorial "${t.id}" step ${i}: settleUntil must be 'load', 'domcontentloaded', or 'networkidle'`,
+      );
+    }
     const id = stepId(s, i);
     if (seen.has(id)) {
       throw new Error(`Tutorial "${t.id}" step ${i}: duplicate step id "${id}"`);

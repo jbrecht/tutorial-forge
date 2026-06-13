@@ -6,7 +6,7 @@ import { localizeTutorial } from '../i18n.js';
 import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
 import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
 import { instrumentPage } from '../browser/instrument.js';
-import { anchorFocus, createStepContext, runStepTeardowns } from './step-hooks.js';
+import { anchorFocus, createStepContext, runStepTeardowns, waitForSettle } from './step-hooks.js';
 import { ensureDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
 
@@ -111,6 +111,7 @@ export async function previewStep(
     await anchorFocus(step, instrumented as Page, ctx, id);
     await step.run(instrumented as Page, ctx);
     await step.waitFor?.(instrumented as Page, ctx);
+    await waitForSettle(step, page, id);
     await page.waitForTimeout(opts.settleMs ?? step.settleMs ?? 400);
 
     await page.screenshot({ path: output });

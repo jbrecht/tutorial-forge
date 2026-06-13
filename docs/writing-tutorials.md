@@ -53,11 +53,38 @@ export default tutorial('Getting started with Lumen Events', [
   })
   ```
 
-- **opts.settleMs** — extra hold after both narration and action complete (default 400).
+- **opts.settleUntil** — wait for a real page load-state signal (`'networkidle' | 'load' | 'domcontentloaded'`) after `run()`/`waitFor()`, instead of guessing a `settleMs`. See [Settling](#settling-waitfor-vs-settleuntil-vs-settlems) below.
+- **opts.settleMs** — extra on-screen hold after both narration and action (and any `settleUntil`) complete (default 400).
 
 ## Pacing
 
 Narration drives pacing. The pipeline synthesizes and measures every narration clip *first*; during recording each step is held on screen for at least `leadInMs` (default 300) + the clip's duration. If the action takes longer than the narration, the step holds until the action finishes instead. You never specify durations by hand.
+
+## Settling: waitFor vs settleUntil vs settleMs
+
+After a step's action, the recording needs to wait until the app has visually caught up before moving on. There are three tools, in order of preference — reach for a magic number last:
+
+| | What it waits on | Use when |
+|---|---|---|
+| **`waitFor`** | A DOM signal you choose (a locator appears, text changes, a spinner detaches) | There's a specific element/state that marks "done". This is the principled default — it waits exactly as long as needed, no more. |
+| **`settleUntil`** | A page load-state signal (`networkidle` / `load` / `domcontentloaded`) | There's *no* clean DOM signal — e.g. a `router.refresh()` that just repaints, or a navigation whose result you don't want to assert on. `'networkidle'` waits for in-flight requests to quiesce. |
+| **`settleMs`** | A fixed number of milliseconds | A last resort, or a deliberate on-screen beat *after* readiness (e.g. let an animation finish, or hold the final frame a touch longer). |
+
+Rule of thumb: **if you can name the thing you're waiting for, use `waitFor`.** If the only signal is "the network went quiet," use `settleUntil: 'networkidle'`. Only fall back to `settleMs` for a deliberate pause or when nothing else applies — and keep it small.
+
+```ts
+// Best: wait on the concrete signal.
+step('Create the event.', async (page) => {
+  await page.getByRole('button', { name: 'Create' }).click();
+}, { waitFor: (page) => page.getByText('Event created').waitFor() })
+
+// No DOM signal — a refresh just repaints. Wait on the network instead of guessing.
+step('The list refreshes with your new row.', async (page) => {
+  await page.reload();
+}, { settleUntil: 'networkidle' })
+```
+
+`settleUntil` is **best-effort and bounded** (~5s): a page that never goes idle — websockets, polling, server-sent events — logs and proceeds rather than failing the render, so it's safe to use even when you're not sure the app quiesces. `settleUntil` and `settleMs` compose: the signal-based wait happens first, then `settleMs` adds its on-screen hold.
 
 ## Iterating on a step
 
