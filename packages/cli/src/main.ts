@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { renderCommand } from './render.js';
 import { previewCommand } from './preview.js';
@@ -19,9 +20,15 @@ if (existsSync(envFile)) {
   }
 }
 
+// Read the version from package.json so it can't drift from the published
+// version (resolves to the package root in both dist and tsx-run dev).
+const pkg = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'),
+) as { version: string };
+
 const program = new Command('tutorial-forge')
   .description('tutorial-forge — scripted Playwright walkthroughs to narrated tutorial videos')
-  .version('0.9.0');
+  .version(pkg.version);
 
 program
   .command('render')
