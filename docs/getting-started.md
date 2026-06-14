@@ -77,6 +77,8 @@ tutorial-forge render                    # render everything
 tutorial-forge render --only my-id      # iterate on one tutorial
 tutorial-forge render --headed          # watch the browser while recording
 tutorial-forge render --phase post      # re-merge without re-recording (uses .forge/<id>/)
+tutorial-forge render --out-dir dist    # override config.outDir for this run
+tutorial-forge render --concurrency 2   # cap parallel TTS synthesis (overrides config.ttsConcurrency)
 tutorial-forge clean --cache            # remove work dirs and the TTS cache
 ```
 

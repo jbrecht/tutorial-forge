@@ -1,6 +1,8 @@
 # tutorial-forge — Specification
 
-> **Working name:** `tutorial-forge` (npm scope TBD, e.g. `@jb/tutorial-forge`). Rename freely; nothing below depends on the name.
+> **⚠️ Historical design document.** This is the pre-v0.1 design spec, kept for context on *why* the system is shaped the way it is. It is **not** current user documentation and some details have since changed (final package names, the full CLI flag set, the dropped Umami framing). For authoritative, up-to-date guidance see **[README.md](README.md)**, the **[docs/](docs/)** guides (`getting-started`, `writing-tutorials`, `adapters`), and **[CHANGELOG.md](CHANGELOG.md)**. Where this document and those disagree, those win.
+>
+> **Names as shipped:** library `tutorial-forge`, CLI package `tutorial-forge-cli`, binary `tutorial-forge` (alias `tforge`). The original spec used a `forge` binary throughout; read the `forge <cmd>` examples below as `tutorial-forge <cmd>`.
 
 ## 1. What this is
 
