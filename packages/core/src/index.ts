@@ -3,6 +3,7 @@
 export type {
   Tutorial,
   Step,
+  LintOptions,
   StepContext,
   TutorialAdapter,
   TTSProvider,

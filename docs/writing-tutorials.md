@@ -26,7 +26,7 @@ export default tutorial('Getting started with Lumen Events', [
 
 `step(narration, run, opts?)`:
 
-- **narration** — the line spoken over this step. Plain text (no SSML). May be `''` for silent steps.
+- **narration** — the line spoken over this step. Plain text (no SSML). May be `''` for silent steps. This is your highest-leverage teaching surface — see [Writing narration that teaches](#writing-narration-that-teaches) for how to write a line that trains rather than just demonstrates.
 - **run(page)** — the action. You get the **raw Playwright `Page`**; use any Playwright API. The pipeline never wraps or re-invents Playwright — it only instruments `click`/`hover`/`fill`/`check`/`selectOption`-style calls to animate the fake cursor and record callouts. Before each such action the target is **smooth-scrolled into the center of the frame** if it isn't already visible, so below-the-fold fills/selects/clicks play on-screen with the cursor on the right element — no manual `scrollIntoView` + `waitForTimeout`. If an exotic call path escapes the instrumentation, the action still works; the cursor just doesn't move.
 - **opts.id** — stable slug used in the manifest, cache keys, and logs. Auto-derived from the index (`step-01`) if omitted, but explicit ids keep artifacts stable when you reorder steps.
 - **opts.waitFor(page)** — awaited after `run()`. Playwright auto-waiting covers most readiness; use this for slow async operations. Prefer locator waits over timeouts:
@@ -55,6 +55,40 @@ export default tutorial('Getting started with Lumen Events', [
 
 - **opts.settleUntil** — wait for a real page load-state signal (`'networkidle' | 'load' | 'domcontentloaded'`) after `run()`/`waitFor()`, instead of guessing a `settleMs`. See [Settling](#settling-waitfor-vs-settleuntil-vs-settlems) below.
 - **opts.settleMs** — extra on-screen hold after both narration and action (and any `settleUntil`) complete (default 400).
+- **opts.lint** — set to `false` to opt this step out of the [narration lints](#narration-lints) (for an intentionally long or multi-action step).
+
+## Writing narration that teaches
+
+The engine already does the load-bearing pedagogy for you — it paces every step to its narration, cues the eye with a cursor and callouts, and keeps the visual channel free of on-screen prose. What it can't do is write a line that *teaches* instead of merely narrating clicks. These principles come straight from multimedia-learning research; the [example tutorial](../packages/example-app/tutorials/getting-started.tutorial.ts) follows all of them.
+
+- **One idea per step (segmenting).** A step is a learning chunk, not just a click. Keep it to a single concept the learner can absorb before the next one arrives. If a sentence has two "and then"s in it, it's probably two steps. This is the single most impactful thing you can do — the over-long-narration [lint](#narration-lints) nudges you when a step grows past one idea.
+- **Explain the *why*, not only the *what*.** "Give the event a descriptive name" tells them what to type; "Give the event a descriptive name — *this is what attendees will see on their invitations*" tells them why it matters, which is what actually sticks. Pair each action with the reason behind it.
+- **Use signaling language.** Words like "notice…", "here…", "this is the…" direct attention to the element that matters — reinforcing what the cursor and callouts already point at. They turn a demonstration into a guided observation.
+- **Open with an objective, close with a recap.** Start the tutorial with a short pure-narration step that says what the learner will be able to do ("In this tour, we'll create your first event and adjust a workspace setting"). End with one that recaps what they accomplished. The opening primes attention (advance-organizer); the recap consolidates it (summary). Strict-mode lints check for both.
+- **Write for the ear, not the page.** Narration is *heard*, not read. Use short sentences and plain words; avoid parentheticals, semicolons, and anything that only parses on a second read. Don't paste paragraphs of on-screen text — doing so makes the eyes compete with the ears (the modality principle the tool otherwise protects for free).
+- **Name *what* and *where* — never bare "click here."** Say "click the **New event** button in the toolbar," not "click here." Deictic narration is meaningless to anyone watching sound-off, with captions, or with low vision, and it teaches the learner nothing transferable about the interface.
+
+Because each chapter title is the first sentence of a step's narration (see [Chapters](#chapters)), a short, descriptive opening sentence does double duty — it teaches *and* it gives you clean navigation for free.
+
+### Narration lints
+
+`tutorial()` runs these principles as **load-time warnings** before any browser launches. They are advisory only — they never fail a render and never change the video; they just print a `warn` line pointing at the step.
+
+- **Over-long narration** *(on by default)* — warns when a step's narration exceeds `maxNarrationWords` (default **60** words, ~24s of speech), the segmenting signal that a step is carrying more than one idea.
+- **Multiple instrumented actions per step** *(strict mode)* — warns when one `run()` performs three or more cursor-animated actions (clicks, fills, checks…), a best-effort segmenting heuristic.
+- **Missing objective / recap** *(strict mode)* — warns when the first step doesn't open with an objective or the last doesn't close with a recap.
+
+Tune or disable them on the tutorial:
+
+```ts
+export default tutorial('My tutorial', steps, {
+  // Defaults: over-long-narration on, heuristics off.
+  lint: { maxNarrationWords: 80, strict: true }, // tune the threshold; enable the heuristics
+  // lint: false,                                // turn every lint off
+});
+```
+
+Silence a single intentional step with `step(narration, run, { lint: false })`. The heuristic lints are gated behind `strict` because they can misfire on deliberate choices — turn them on when you want the extra nudges and accept the occasional false positive.
 
 ## Chapters
 
