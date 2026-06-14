@@ -71,6 +71,30 @@ describe('buildMergeArgs', () => {
     expect(args.at(-1)).toBe('/out/t.mp4');
   });
 
+  it('adds the chapters ffmetadata input last and maps its metadata in', () => {
+    const args = argsFor({ chaptersFile: '/work/chapters.ffmeta' });
+    const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
+    // ffmeta input follows the raw video + two audio inputs (index 3) so the
+    // filter graph's stream indices stay stable.
+    expect(inputs).toEqual(['/work/raw.webm', '/audio/a.wav', '/audio/c.wav', '/work/chapters.ffmeta']);
+    expect(args[args.indexOf('-f') + 1]).toBe('ffmetadata');
+    expect(args[args.indexOf('-map_metadata') + 1]).toBe('3');
+  });
+
+  it('places the chapters input after burned captions so its index is correct', () => {
+    const args = argsFor({
+      chaptersFile: '/work/chapters.ffmeta',
+      captions: { items: [{ file: '/cap/cue-01.png', startMs: 600, endMs: 2600 }], bottomMarginPx: 24 },
+    });
+    const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
+    expect(inputs).toEqual(['/work/raw.webm', '/audio/a.wav', '/audio/c.wav', '/cap/cue-01.png', '/work/chapters.ffmeta']);
+    expect(args[args.indexOf('-map_metadata') + 1]).toBe('4'); // raw+2 audio+1 caption
+  });
+
+  it('omits -map_metadata when no chapters file is given', () => {
+    expect(argsFor()).not.toContain('-map_metadata');
+  });
+
   it('handles a fully silent tutorial without amix', () => {
     const args = argsFor({ audioFiles: [null, null, null] });
     const filter = args[args.indexOf('-filter_complex') + 1]!;

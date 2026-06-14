@@ -61,6 +61,17 @@ export {
   ffmpegHasFilter,
   type MergeArgsInput,
 } from './post/ffmpeg.js';
+export {
+  computeChapters,
+  deriveChapterTitle,
+  generateChaptersVtt,
+  generateChaptersTxt,
+  generateChaptersFfmetadata,
+  vttTime,
+  stampTime,
+  type Chapter,
+  type ChapterOptions,
+} from './post/chapters.js';
 export { stepHoldUntilMs } from './browser/timing.js';
 export { computeZoomWindows, buildZoomFilter, DEFAULT_ZOOM_FACTOR, type ZoomWindow } from './post/zoom.js';
 export {

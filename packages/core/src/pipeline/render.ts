@@ -97,6 +97,7 @@ export async function render<S = unknown>(
       idleSpeedup: options.idleSpeedup,
       captionStyle: options.captionStyle,
       gif: options.gif,
+      chapters: options.chapters,
     });
 
     if (!(options.keepWorkDir ?? options.debug ?? false)) {
@@ -162,6 +163,8 @@ function partialResult(workDir: string, output: string, manifest: TimingManifest
     output,
     srtPath: null,
     gifPath: null,
+    chaptersVttPath: null,
+    chaptersTxtPath: null,
     videoClockOffsetMs: manifest.videoClockOffsetMs ?? 0,
     outputDurationMs: 0,
     manifest,

@@ -56,6 +56,10 @@ export default tutorial('Getting started with Lumen Events', [
 - **opts.settleUntil** — wait for a real page load-state signal (`'networkidle' | 'load' | 'domcontentloaded'`) after `run()`/`waitFor()`, instead of guessing a `settleMs`. See [Settling](#settling-waitfor-vs-settleuntil-vs-settlems) below.
 - **opts.settleMs** — extra on-screen hold after both narration and action (and any `settleUntil`) complete (default 400).
 
+## Chapters
+
+Every render emits chapter markers (an MP4 chapter track plus `.chapters.vtt` and `.chapters.txt` sidecars) so learners can self-pace and jump between segments. There's one chapter per narrated step — silent steps fold into the chapter before them — and each chapter title is the **first sentence of that step's narration**. That makes the opening line of every step do double duty: write a short, descriptive first sentence and you get clean chapter titles for free. See [Render → Chapters](getting-started.md#render) for the output formats and how to disable them.
+
 ## Pacing
 
 Narration drives pacing. The pipeline synthesizes and measures every narration clip *first*; during recording each step is held on screen for at least `leadInMs` (default 300) + the clip's duration. If the action takes longer than the narration, the step holds until the action finishes instead. You never specify durations by hand.

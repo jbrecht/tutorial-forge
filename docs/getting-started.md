@@ -90,6 +90,16 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 
 **Idle speed-up:** pass `--idle-speedup` (or `idleSpeedup: true` / `{ maxIdleMs: 2000, speed: 3 }`) to fast-forward narration-free waits — spinners, slow loads, long silent steps. Narration playback and click choreography always stay at 1x; audio offsets and subtitle cues are remapped to the shortened timeline automatically.
 
+**Chapters:** every render embeds chapter markers so learners can self-pace and jump between segments — the strongest, cheapest learning win a tutorial video gets. You get three things at no extra recording cost, derived from the per-step timeline:
+
+- an **MP4 chapter track** (readable in QuickTime, VLC, and most players),
+- a **`<id>.chapters.vtt`** sidecar for web players, and
+- a **`<id>.chapters.txt`** YouTube-style timestamp list to paste into a video description.
+
+One chapter per narrated step; silent steps fold into the chapter before them, and the title is the first sentence of the step's narration (so write a clear opening line). Chapters are on by default; disable with `--no-chapters` or `chapters: false` in config.
+
+> Per-step is the first cut. Author-defined section grouping — chapters that span several steps and map to named concepts — is a planned follow-up ([#35](https://github.com/jbrecht/tutorial-forge/issues/35)).
+
 ## Recorders
 
 Two capture implementations, selected with `--recorder` or `recorder:` in config:
