@@ -18,6 +18,10 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## Unreleased
+
+- **Chapters / segmenting (#35).** Every render now emits chapter markers derived from the per-step timeline: an MP4 chapter track (QuickTime/VLC/most players), a `<id>.chapters.vtt` sidecar for web players, and a `<id>.chapters.txt` YouTube-style timestamp list. One chapter per narrated step (silent steps fold into the prior chapter); the title is the first sentence of the step's narration. On by default; disable with `--no-chapters` or `chapters: false`. Author-defined section grouping is a planned follow-up. Additive — no change to the rendered video itself.
+
 ## 0.10.0 — teardown safety & authoring state
 
 A second dogfooding pass (umami again, on 0.9.0) surfaced a cluster of setup/teardown lifecycle gaps and the ergonomic hole the new per-tutorial setup opened. Additive for normal use — existing tutorials and adapters render unchanged. One type-only caveat: `StepContext` gained a required `state` field, so if you construct a `StepContext` object literal yourself (e.g. a test harness) it now needs that field; code that merely *receives* `ctx` in a callback is unaffected.

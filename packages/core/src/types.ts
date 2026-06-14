@@ -175,6 +175,13 @@ export interface RenderOptions {
    * every step framed the right thing without scrubbing the video. Default off.
    */
   contactSheet?: boolean;
+  /**
+   * Emit chapter markers (#35): an MP4 chapter track plus `.chapters.vtt` and
+   * `.chapters.txt` sidecars, derived from per-step boundaries, so learners can
+   * self-pace and jump between segments. One chapter per narrated step; silent
+   * steps fold into the prior chapter. Default true.
+   */
+  chapters?: boolean;
 }
 
 export interface CalloutRecord {

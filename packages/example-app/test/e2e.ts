@@ -4,6 +4,8 @@
  * artifacts. Exits non-zero on any failure.
  */
 import { strict as assert } from 'node:assert';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +21,7 @@ import { anchorFocus, createStepContext } from '../../core/src/pipeline/step-hoo
 import { startServer } from '../src/server.ts';
 import gettingStarted from '../tutorials/getting-started.tutorial.ts';
 
+const execFileAsync = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = mkdtempSync(join(tmpdir(), 'forge-e2e-'));
 
@@ -45,6 +48,22 @@ try {
 
   assert.ok(existsSync(output), 'output mp4 exists');
   assert.ok(result.srtPath && existsSync(result.srtPath), 'sidecar srt exists');
+
+  // #35 — chapters: sidecars written, and the MP4 carries a chapter track at
+  // boundaries derived from the manifest (one per narrated step, silent folded).
+  assert.ok(result.chaptersVttPath && existsSync(result.chaptersVttPath), 'chapters vtt sidecar exists');
+  assert.ok(result.chaptersTxtPath && existsSync(result.chaptersTxtPath), 'chapters txt sidecar exists');
+  assert.ok(readFileSync(result.chaptersVttPath!, 'utf8').startsWith('WEBVTT'), 'chapters vtt is well-formed');
+  const narratedCount = result.manifest.steps.filter((s) => s.narration.trim()).length;
+  assert.equal(
+    readFileSync(result.chaptersTxtPath!, 'utf8').trim().split('\n').length,
+    narratedCount,
+    'one chapter stamp per narrated step',
+  );
+  const probedChapters = JSON.parse(
+    (await execFileAsync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_chapters', output])).stdout,
+  ) as { chapters: unknown[] };
+  assert.equal(probedChapters.chapters.length, narratedCount, 'MP4 chapter track has one entry per narrated step');
 
   // #9 — contact sheet emitted next to the video, with one kept screenshot per step.
   assert.ok(result.contactSheetPath && existsSync(result.contactSheetPath), 'contact sheet PNG exists');

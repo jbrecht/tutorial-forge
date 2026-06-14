@@ -26,6 +26,8 @@ export interface RenderCmdOptions {
   recorder?: string;
   /** Emit a per-step contact sheet next to the video for authoring verification. */
   contactSheet?: boolean;
+  /** Chapter markers. Commander sets this false only when --no-chapters is passed (else true). */
+  chapters?: boolean;
 }
 
 /** Merge --gif/--gif-steps flags with config.gif (flags win; --gif-steps implies --gif). */
@@ -94,10 +96,13 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         recorder: resolveRecorder(opts.recorder) ?? config.recorder,
         debug: opts.debug,
         contactSheet: opts.contactSheet ?? config.contactSheet,
+        // --no-chapters forces off; otherwise fall back to config (post defaults on).
+        chapters: opts.chapters === false ? false : config.chapters,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {
         console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
         if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
+        if (result.chaptersVttPath) console.log(`  chapters:  ${result.chaptersVttPath}`);
         if (result.gifPath) console.log(`  gif:       ${result.gifPath}`);
         if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
       } else {

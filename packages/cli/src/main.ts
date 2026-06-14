@@ -48,6 +48,7 @@ program
   .option('--gif-steps <range>', 'GIF excerpt: a step id or "from-id..to-id" (implies --gif)')
   .option('--recorder <kind>', "capture implementation: 'video' (default) or 'screencast'")
   .option('--contact-sheet', 'emit a per-step contact sheet PNG next to the video (authoring verification)')
+  .option('--no-chapters', 'skip chapter markers (MP4 chapter track + .chapters.vtt/.txt sidecars)')
   .option('--debug', 'keep work dir with Playwright trace, console log, per-step screenshots')
   .action(async (globs: string[], opts) => {
     if (!['tts', 'record', 'post', 'all'].includes(opts.phase)) {

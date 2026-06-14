@@ -4,6 +4,12 @@ import type { TimingManifest } from '../types.js';
 import { RAW_VIDEO_FILE, FLASH_MS } from './record.js';
 import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from '../post/ffmpeg.js';
 import { computeCues, generateSrt } from '../post/subtitles.js';
+import {
+  computeChapters,
+  generateChaptersVtt,
+  generateChaptersTxt,
+  generateChaptersFfmetadata,
+} from '../post/chapters.js';
 import { DEFAULT_CAPTION_STYLE, renderCaptionImages, type CaptionImage } from '../post/captions.js';
 import { buildGifArgs, resolveGifWindow, DEFAULT_GIF, type GifConfig } from '../post/gif.js';
 import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
@@ -29,12 +35,16 @@ export interface PostPhaseOptions {
   captionStyle?: Partial<typeof DEFAULT_CAPTION_STYLE>;
   /** Also export an animated GIF (captioned by default). */
   gif?: boolean | Partial<GifConfig>;
+  /** Emit chapter markers (MP4 chapter track + .chapters.vtt/.txt sidecars). Default true. */
+  chapters?: boolean;
 }
 
 export interface PostPhaseResult {
   output: string;
   srtPath: string | null;
   gifPath: string | null;
+  chaptersVttPath: string | null;
+  chaptersTxtPath: string | null;
   videoClockOffsetMs: number;
   outputDurationMs: number;
 }
@@ -78,6 +88,8 @@ export async function runPostPhase(
   manifest.videoClockOffsetMs = videoOffsetMs;
 
   await ensureDir(dirname(opts.output));
+  // Sidecar paths share the output's directory and base name (foo.mp4 → foo.srt).
+  const base = (ext: string) => join(dirname(opts.output), basename(opts.output, extname(opts.output)) + ext);
 
   // Idle speed-up: compress narration-free spans; everything downstream
   // (audio delays, subtitles, zoom windows) maps through the same time map.
@@ -103,7 +115,7 @@ export async function runPostPhase(
   let srtPath: string | null = null;
   if (opts.subtitles === 'sidecar') {
     const srt = generateSrt(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs });
-    srtPath = join(dirname(opts.output), basename(opts.output, extname(opts.output)) + '.srt');
+    srtPath = base('.srt');
     await writeFile(srtPath, srt);
   }
 
@@ -115,6 +127,32 @@ export async function runPostPhase(
     const style = { ...DEFAULT_CAPTION_STYLE, ...opts.captionStyle };
     captionImages = await renderCaptionImages(cues, style, join(opts.workDir, 'captions'), opts.viewport.width);
     logger.info(`post: burning ${captionImages.length} caption(s)`);
+  }
+
+  // Chapters: a new consumer of the manifest's per-step boundaries, on the same
+  // (trimmed, retimed) output timeline as cues. Emits an MP4 chapter track plus
+  // web (.vtt) and paste-into-description (.txt) sidecars. Segmenting principle.
+  let chaptersVttPath: string | null = null;
+  let chaptersTxtPath: string | null = null;
+  let chaptersFile: string | undefined;
+  if (opts.chapters ?? true) {
+    const timelineDurationMs = timeMap
+      ? timeMap.outputDurationS * 1000
+      : manifest.totalDurationMs - trimStartMs;
+    const chapters = computeChapters(manifest, {
+      trimStartMs,
+      mapMs,
+      outputDurationMs: timelineDurationMs,
+    });
+    if (chapters.length > 0) {
+      chaptersVttPath = base('.chapters.vtt');
+      chaptersTxtPath = base('.chapters.txt');
+      await writeFile(chaptersVttPath, generateChaptersVtt(chapters));
+      await writeFile(chaptersTxtPath, generateChaptersTxt(chapters));
+      chaptersFile = join(opts.workDir, 'chapters.ffmeta');
+      await writeFile(chaptersFile, generateChaptersFfmetadata(chapters));
+      logger.info(`post: ${chapters.length} chapter(s) → ${basename(chaptersVttPath)} + MP4 markers`);
+    }
   }
 
   let zoomFilter: string | undefined;
@@ -151,6 +189,7 @@ export async function runPostPhase(
         }
       : undefined,
     zoomFilter,
+    chaptersFile,
     retime:
       timeMap && mapMs
         ? {
@@ -185,7 +224,7 @@ export async function runPostPhase(
         bottomMarginPx: style.bottomMarginPx,
       };
     }
-    gifPath = join(dirname(opts.output), basename(opts.output, extname(opts.output)) + '.gif');
+    gifPath = base('.gif');
     await runFfmpeg(
       buildGifArgs({
         source: opts.output,
@@ -203,6 +242,8 @@ export async function runPostPhase(
     output: opts.output,
     srtPath: opts.subtitles === 'sidecar' ? srtPath : null,
     gifPath,
+    chaptersVttPath,
+    chaptersTxtPath,
     videoClockOffsetMs: videoOffsetMs,
     outputDurationMs,
   };

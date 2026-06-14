@@ -36,6 +36,8 @@ export interface ForgeConfig {
   recorder?: 'video' | 'screencast';
   /** Emit a per-step contact sheet next to each video for authoring verification (#9). Default off. */
   contactSheet?: boolean;
+  /** Emit chapter markers — MP4 chapter track + .chapters.vtt/.txt sidecars (#35). Default true. */
+  chapters?: boolean;
 }
 
 const configSchema = z.object({
@@ -96,6 +98,7 @@ const configSchema = z.object({
     .optional(),
   recorder: z.enum(['video', 'screencast']).optional(),
   contactSheet: z.boolean().optional(),
+  chapters: z.boolean().optional(),
 });
 
 export function defineConfig(config: ForgeConfig): ForgeConfig {

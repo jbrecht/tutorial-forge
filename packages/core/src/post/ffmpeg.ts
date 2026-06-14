@@ -134,6 +134,8 @@ export interface MergeArgsInput {
   };
   /** Pre-built zoom stage (fps + zoompan) to insert after the trim; see post/zoom.ts. */
   zoomFilter?: string;
+  /** ffmetadata file with chapter blocks; mapped into the MP4 as a chapter track. See post/chapters.ts. */
+  chaptersFile?: string;
   /** Idle speed-up retiming; see post/retime.ts. */
   retime?: {
     /** setpts filter implementing the time map. */
@@ -203,6 +205,14 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
     );
   });
 
+  // Chapters: an ffmetadata input (after every stream input so the indices the
+  // filter graph references stay stable), mapped in below as a chapter track.
+  let chaptersInputIndex = -1;
+  if (input.chaptersFile) {
+    chaptersInputIndex = 1 + narrated.length + captionItems.length;
+    args.push('-f', 'ffmetadata', '-i', input.chaptersFile);
+  }
+
   // Audio chain: silence base + each clip delayed to its slot, mixed.
   filters.push(
     `anullsrc=channel_layout=mono:sample_rate=48000,atrim=duration=${durationS}[abase]`,
@@ -224,6 +234,13 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
     '-filter_complex', filters.join(';'),
     '-map', '[vout]',
     '-map', '[aout]',
+  );
+  // Pull chapters (and only chapters — streams come from the filter graph) from
+  // the ffmetadata input. -map_metadata carries its chapter blocks into the MP4.
+  if (chaptersInputIndex >= 0) {
+    args.push('-map_metadata', String(chaptersInputIndex));
+  }
+  args.push(
     '-c:v', 'libx264',
     '-crf', '18',
     '-preset', 'slow',
