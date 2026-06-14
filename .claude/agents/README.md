@@ -1,16 +1,18 @@
 # tutorial-forge agents
 
-Five project subagents for tutorial-forge — the TypeScript ESM monorepo (pnpm) that
+Six project subagents for tutorial-forge — the TypeScript ESM monorepo (pnpm) that
 renders narrated tutorial videos by driving an app with Playwright and stitching the
-result with ffmpeg. One **generative** role grooms what to build; four **reactive**
-reviewers critique work along different axes — *is it correct*, *is it well-tested*, *does
-it watch well*, *is it safe to ship*. Reach for them at these moments:
+result with ffmpeg. Two **generative** roles decide what to build — one for product
+priority, one for pedagogical direction; four **reactive** reviewers critique work along
+different axes — *is it correct*, *is it well-tested*, *does it watch well*, *is it safe to
+ship*. Reach for them at these moments:
 
 ## Generative (decide what to build)
 
 | Agent | Reach for it when… | It produces |
 |---|---|---|
 | **product-manager** | grooming the backlog, planning a release, or deciding what to build next. | a prioritized backlog (Now/Next/Later/propose-close) verified against the code + CHANGELOG, newly filed gap issues, and a maintainer report of product decisions that block work. Files issues; never closes/edits them. |
+| **instructional-designer** | steering a new feature toward sound teaching, or evaluating whether the project's approach actually helps people learn complex software. | a pedagogy verdict tying TF's features (callouts/cursor/zoom = signaling, steps = segmenting, narration↔action sync = temporal contiguity, captions = redundancy tension, idle-speedup = coherence) to named instructional-design principles and learner outcomes, plus feature proposals for the gaps. Advisory — recommends to the product-manager; doesn't file issues or write code. |
 
 ## Reactive (review what exists)
 
@@ -44,9 +46,18 @@ The four reviewers are deliberately **different axes on the same render**, not r
   because a cue is mis-computed, a callout firing on the wrong step) and hands those to the
   **code-reviewer** / **qa-engineer** rather than treating them as taste. The reverse also
   holds: a correct-but-unwatchable render is the designer's call, not the code-reviewer's.
+- The **instructional-designer** and the **designer** share a seam on the attention
+  features (callouts/cursor/zoom, pacing, captions): the designer asks *is it crafted well*
+  (jarring zoom, unreadable caption), the instructional-designer asks *does the learner
+  learn* (the zoom cues the wrong element; narrating identical on-screen text adds load).
+  Polish goes to the designer; learning outcomes stay with the instructional-designer.
+- The **instructional-designer** sets pedagogical *direction*; the **product-manager** owns
+  *priority and filing*. The instructional-designer produces the learning rationale and the
+  argument for a feature; the PM weighs it against everything else and turns it into issues.
 - The **product-manager** consumes the others' findings as backlog input (a qa coverage
-  gap or a designer critique can become a filed issue) but owns *what/when*, not *how* —
-  it files new issues and recommends closures; it never edits existing ones.
+  gap, a designer critique, or an instructional-designer recommendation can become a filed
+  issue) but owns *what/when*, not *how* — it files new issues and recommends closures; it
+  never edits existing ones.
 - The **release-reviewer** is the last gate before publish; the **code-reviewer**'s
   public-API/semver findings feed directly into its version-bump check.
 
