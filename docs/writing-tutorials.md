@@ -92,7 +92,7 @@ Silence a single intentional step with `step(narration, run, { lint: false })`. 
 
 ## Chapters
 
-Every render emits chapter markers (an MP4 chapter track plus `.chapters.vtt` and `.chapters.txt` sidecars) so learners can self-pace and jump between segments. There's one chapter per narrated step — silent steps fold into the chapter before them — and each chapter title is the **first sentence of that step's narration**. That makes the opening line of every step do double duty: write a short, descriptive first sentence and you get clean chapter titles for free. See [Render → Chapters](getting-started.md#render) for the output formats and how to disable them.
+Every render emits chapter markers (an MP4 chapter track plus `.chapters.vtt` and `.chapters.txt` sidecars) so learners can self-pace and jump between segments. There's one chapter per narrated step — silent steps fold into the chapter before them — and each chapter title is the **first sentence of that step's narration**. That makes the opening line of every step do double duty: write a short, descriptive first sentence and you get clean chapter titles for free. Keep it under ~50 characters — that's the title cap (Vimeo's limit), past which titles are truncated. See [Render → Chapters](getting-started.md#render) for the output formats, how to disable them, and how to get chapters onto YouTube and Vimeo.
 
 ## Intro & recap cards
 
