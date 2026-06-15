@@ -9,18 +9,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # Skip the expensive Chromium install + e2e render only when every changed
+      # file is docs/markdown/license — anything else runs the full gate.
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            docs_only:
+              - 'docs/**'
+              - '**/*.md'
+              - 'LICENSE'
+              - 'COMMERCIAL.md'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
+      # ffmpeg is needed by the unit tests too (cache.test.ts normalizes audio),
+      # so it always installs — only Chromium + the e2e render are gated below.
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-liberation fonts-noto-color-emoji
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm --filter tutorial-forge test
-      - run: pnpm --filter tutorial-forge-example-app exec playwright install --with-deps chromium
+      - name: Install Playwright Chromium
+        if: steps.changes.outputs.docs_only != 'true'
+        run: pnpm --filter tutorial-forge-example-app exec playwright install --with-deps chromium
       - name: E2E render against example app
+        if: steps.changes.outputs.docs_only != 'true'
         run: pnpm --filter tutorial-forge-example-app e2e
       - name: Publish dry-run
         run: pnpm --filter tutorial-forge --filter tutorial-forge-cli publish --dry-run --no-git-checks
