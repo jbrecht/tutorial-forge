@@ -279,6 +279,19 @@ describe('parseFlashFromMetadata', () => {
     expect(parseFlashFromMetadata(out)).toBeNull();
   });
 
+  it('returns 0 (not null) when the flash is the very first frame', () => {
+    // recordVideo sometimes coalesces the identical pre-flash blank frames, so
+    // the first encoded frame IS the magenta flash at pts_time 0 → offset 0.
+    // This is a real detection (distinct from null = no flash), and callers
+    // must not treat the 0 as "not found". Regression for the e2e `> 0` flake.
+    const out = [
+      'frame:0 pts:0 pts_time:0',
+      'lavfi.signalstats.UAVG=201.0',
+      'lavfi.signalstats.VAVG=219.0',
+    ].join('\n');
+    expect(parseFlashFromMetadata(out)).toBe(0);
+  });
+
   it('detects a limited-range / compression-dimmed magenta frame (#46 regression)', () => {
     // Same flash decoded as limited range scales toward center (~177/195) and
     // straddled the old 180/170 cutoff — the intermittent CI miss this fixes.

@@ -18,6 +18,10 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## Unreleased
+
+- **Fix flaky calibration-flash e2e check.** The integration test asserted `videoClockOffsetMs > 0`, but a flash detected on the recording's very first frame yields a legitimate offset of `0` (recordVideo coalesces the identical pre-flash blank frames), so the test failed ~1 run in 3 even though detection succeeded. It now re-detects the flash on the raw recording and asserts it was *found* (non-null), and that the pipeline used that offset. Production behavior was already correct — test-only change.
+
 ## 0.11.2 — fix cli dependency spec
 
 - **Fix broken `tutorial-forge-cli@0.11.1` install.** That version was published with `npm publish`, which does not rewrite the `workspace:*` protocol, so the CLI shipped with an unresolvable `tutorial-forge: workspace:*` dependency. Republished via `pnpm publish` so the dependency pins a real version. No source changes; `0.11.1` of the CLI is deprecated. The `tutorial-forge` library `0.11.1` was unaffected.
