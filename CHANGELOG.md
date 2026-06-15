@@ -18,6 +18,10 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## Unreleased
+
+- **More robust calibration-flash detection (#46).** Flash detection now accepts magenta frames across a wider chroma range, fixing intermittent misses when the raw recording is decoded as limited range (16–235) — common in CI and some ffmpeg builds. A missed flash previously fell back to clock-zero (degrading audio sync); detection is now reliable on those setups. Internal-only; no API change.
+
 ## 0.11.0 — teaching-first rendering
 
 A pedagogy-focused release: the engine already nailed the mechanics (narration-first pacing, signaling, coherence), so this round makes the *tutorials it produces* teach better, acting on the instructional-designer review. All three additions are additive and opt-in/presence-driven — existing tutorials and adapters render unchanged, and no public API was removed or changed. Update both packages in lockstep.

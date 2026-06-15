@@ -278,4 +278,35 @@ describe('parseFlashFromMetadata', () => {
     ].join('\n');
     expect(parseFlashFromMetadata(out)).toBeNull();
   });
+
+  it('detects a limited-range / compression-dimmed magenta frame (#46 regression)', () => {
+    // Same flash decoded as limited range scales toward center (~177/195) and
+    // straddled the old 180/170 cutoff — the intermittent CI miss this fixes.
+    const out = [
+      'frame:0 pts:0 pts_time:0',
+      'lavfi.signalstats.UAVG=129.0',
+      'lavfi.signalstats.VAVG=127.0',
+      'frame:9 pts:300 pts_time:0.300',
+      'lavfi.signalstats.UAVG=177.0',
+      'lavfi.signalstats.VAVG=195.0',
+    ].join('\n');
+    expect(parseFlashFromMetadata(out)).toBe(300);
+  });
+
+  it('stays magenta-specific: a single elevated chroma channel is not a flash', () => {
+    // A saturated blue (high U, low V) or red (low U, high V) UI frame must not
+    // be mistaken for the flash — magenta requires BOTH channels above neutral.
+    const blueish = [
+      'frame:3 pts:120 pts_time:0.120',
+      'lavfi.signalstats.UAVG=205.0',
+      'lavfi.signalstats.VAVG=120.0',
+    ].join('\n');
+    const reddish = [
+      'frame:3 pts:120 pts_time:0.120',
+      'lavfi.signalstats.UAVG=120.0',
+      'lavfi.signalstats.VAVG=210.0',
+    ].join('\n');
+    expect(parseFlashFromMetadata(blueish)).toBeNull();
+    expect(parseFlashFromMetadata(reddish)).toBeNull();
+  });
 });
