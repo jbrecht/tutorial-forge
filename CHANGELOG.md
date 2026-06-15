@@ -18,7 +18,7 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
-## Unreleased
+## 0.11.1 — relicense to PolyForm Small Business
 
 - **License change: MIT → PolyForm Small Business 1.0.0.** Tutorial Forge is now source-available rather than OSI open source. It remains **free** for individuals and for organizations with **fewer than 100 people and less than $1,000,000 USD revenue** — including CI/CD, internal tooling, and hosted-service use (company size is the only gate). Larger organizations require a commercial license; see [COMMERCIAL.md](COMMERCIAL.md). Previously published versions (≤ 0.11.0) remain available under their original MIT terms. The `license` field of both packages is now `PolyForm-Small-Business-1.0.0`.
 - **More robust calibration-flash detection (#46).** Flash detection now accepts magenta frames across a wider chroma range, fixing intermittent misses when the raw recording is decoded as limited range (16–235) — common in CI and some ffmpeg builds. A missed flash previously fell back to clock-zero (degrading audio sync); detection is now reliable on those setups. Internal-only; no API change.
