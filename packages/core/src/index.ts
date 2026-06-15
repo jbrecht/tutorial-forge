@@ -15,7 +15,7 @@ export type {
 export { StepError, type FailureArtifacts } from './types.js';
 
 export { tutorial, step, validateTutorial, stepId } from './spec.js';
-export { localizeTutorial, availableLanguages } from './i18n.js';
+export { localizeTutorial, availableLanguages, OBJECTIVES_KEY, SUMMARY_KEY } from './i18n.js';
 export { defineConfig, validateConfig, type ForgeConfig } from './config.js';
 
 export { render, type RenderResult } from './pipeline/render.js';
@@ -51,6 +51,14 @@ export { defaultCacheDir, synthesizeCached } from './tts/cache.js';
 
 export { generateSrt, computeCues, srtTime, wrapText, type Cue } from './post/subtitles.js';
 export { captionHtml, renderCaptionImages, DEFAULT_CAPTION_STYLE, type CaptionStyle } from './post/captions.js';
+export {
+  cardHtml,
+  computeCardDurationMs,
+  renderCards,
+  cardContentsFor,
+  type CardContent,
+  type RenderedCard,
+} from './post/cards.js';
 export { buildGifArgs, resolveGifWindow, DEFAULT_GIF, type GifConfig, type GifWindow } from './post/gif.js';
 export {
   buildMergeArgs,
@@ -68,6 +76,7 @@ export {
   generateChaptersVtt,
   generateChaptersTxt,
   generateChaptersFfmetadata,
+  shiftChapters,
   vttTime,
   stampTime,
   type Chapter,

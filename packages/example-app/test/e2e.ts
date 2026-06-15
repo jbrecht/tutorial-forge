@@ -51,19 +51,28 @@ try {
 
   // #35 — chapters: sidecars written, and the MP4 carries a chapter track at
   // boundaries derived from the manifest (one per narrated step, silent folded).
+  // #37 — the getting-started tutorial declares objectives + summary, so the
+  // chapter track is bookended by an Objectives and a Recap chapter (+2).
   assert.ok(result.chaptersVttPath && existsSync(result.chaptersVttPath), 'chapters vtt sidecar exists');
   assert.ok(result.chaptersTxtPath && existsSync(result.chaptersTxtPath), 'chapters txt sidecar exists');
   assert.ok(readFileSync(result.chaptersVttPath!, 'utf8').startsWith('WEBVTT'), 'chapters vtt is well-formed');
   const narratedCount = result.manifest.steps.filter((s) => s.narration.trim()).length;
+  const expectedChapters = narratedCount + 2; // intro (Objectives) + recap (Recap) cards
   assert.equal(
     readFileSync(result.chaptersTxtPath!, 'utf8').trim().split('\n').length,
-    narratedCount,
-    'one chapter stamp per narrated step',
+    expectedChapters,
+    'one chapter stamp per narrated step, plus intro + recap card chapters',
   );
+  const chaptersTxt = readFileSync(result.chaptersTxtPath!, 'utf8');
+  assert.ok(/0:00 Objectives/.test(chaptersTxt), 'first chapter is the Objectives card at 0:00');
+  assert.ok(/ Recap\n?$/.test(chaptersTxt.trim() + '\n'), 'last chapter is the Recap card');
   const probedChapters = JSON.parse(
     (await execFileAsync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_chapters', output])).stdout,
   ) as { chapters: unknown[] };
-  assert.equal(probedChapters.chapters.length, narratedCount, 'MP4 chapter track has one entry per narrated step');
+  assert.equal(probedChapters.chapters.length, expectedChapters, 'MP4 chapter track includes the card chapters');
+
+  // #37 — cards add measurable length, embedded at the head/tail of the video.
+  assert.ok(result.cardsDurationMs > 0, 'cards contributed duration to the output');
 
   // #9 — contact sheet emitted next to the video, with one kept screenshot per step.
   assert.ok(result.contactSheetPath && existsSync(result.contactSheetPath), 'contact sheet PNG exists');
@@ -71,10 +80,12 @@ try {
     assert.ok(existsSync(join(outDir, 'work', 'steps', `${s.id}.png`)), `step screenshot kept: ${s.id}`);
   }
 
-  const expectedMs = result.manifest.totalDurationMs - (result.manifest.steps[0]!.startMs - 300);
+  // Expected length = trimmed body + the intro/recap cards composited around it (#37).
+  const bodyMs = result.manifest.totalDurationMs - (result.manifest.steps[0]!.startMs - 300);
+  const expectedMs = bodyMs + result.cardsDurationMs;
   const actualMs = await probeDurationMs(output);
   const drift = Math.abs(actualMs - expectedMs) / expectedMs;
-  assert.ok(drift < 0.05, `duration within ±5% of manifest (expected ~${expectedMs}ms, got ${actualMs}ms)`);
+  assert.ok(drift < 0.05, `duration within ±5% of manifest+cards (expected ~${expectedMs}ms, got ${actualMs}ms)`);
 
   const narratedSteps = result.manifest.steps.filter((s) => s.audioDurationMs > 0).length;
   const cueCount = readFileSync(result.srtPath!, 'utf8').trim().split('\n\n').length;
@@ -113,17 +124,32 @@ try {
   const esSrt = readFileSync(esResult.srtPath!, 'utf8');
   assert.ok(esSrt.includes('Bienvenido a Lumen Events'), 'es srt contains Spanish narration');
   assert.ok(!esSrt.includes('Welcome to Lumen Events'), 'es srt contains no source narration');
+  // #37 — localized cards (Spanish objectives/summary via reserved __keys__) are
+  // rendered, and the intro card pushes the first subtitle past 0 in the file.
+  assert.ok(esResult.cardsDurationMs > 0, 'es render composited localized cards');
+  const esFirstCueMs = (() => {
+    const m = /\n(\d\d):(\d\d):(\d\d),(\d\d\d) -->/.exec(esSrt);
+    return m ? (+m[1]! * 3600 + +m[2]! * 60 + +m[3]!) * 1000 + +m[4]! : 0;
+  })();
+  assert.ok(esFirstCueMs >= 3000, `es first subtitle starts after the intro card (got ${esFirstCueMs}ms)`);
   console.log(`e2e OK [es]: ${esOutput} (${(esResult.outputDurationMs / 1000).toFixed(1)}s)`);
 
   // Idle speed-up: a tutorial with a long silent wait must come out shorter,
   // with narration offsets remapped (cue still starts after the lead-in).
+  // #37 — declares objectives/summary so this render exercises the hardest
+  // interaction: cards composited around an idle-speedup-retimed, screencast,
+  // burned-caption body that also exports a GIF excerpt.
   const idleTutorial = tutorial('Idle', [
     step('A short narrated step.', async () => {}, { id: 'narrated' }),
     step('', async (page) => {
       await page.waitForTimeout(4000); // silent dead time — the compression target
     }, { id: 'silent-wait' }),
     step('And a narrated wrap-up.', async () => {}, { id: 'outro' }),
-  ], { id: 'idle-demo' });
+  ], {
+    id: 'idle-demo',
+    objectives: ['See idle speed-up compress a long wait'],
+    summary: 'The silent wait was fast-forwarded.',
+  });
   const idleOutput = join(outDir, 'idle-demo.mp4');
   const idleResult = await render(idleTutorial, adapter, {
     tts: SilentProvider(),
@@ -137,9 +163,14 @@ try {
   });
   const idleUncompressedMs =
     idleResult.manifest.totalDurationMs - (idleResult.manifest.steps[0]!.startMs - 300);
+  // #37 — cards rendered on the retimed path; isolate the body (output minus the
+  // cards) and confirm the retimed body itself still saved >2s, so the card
+  // duration was added on top, not folded into the speed-up accounting.
+  assert.ok(idleResult.cardsDurationMs > 0, 'idle render composited cards on the retimed body');
+  const idleBodyMs = idleResult.outputDurationMs - idleResult.cardsDurationMs;
   assert.ok(
-    idleResult.outputDurationMs < idleUncompressedMs - 2000,
-    `idle speed-up saved >2s (${idleResult.outputDurationMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
+    idleBodyMs > 0 && idleBodyMs < idleUncompressedMs - 2000,
+    `retimed body saved >2s after removing ${idleResult.cardsDurationMs}ms of cards (body ${idleBodyMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
   );
   assert.equal(idleResult.srtPath, null, 'burn mode writes no sidecar srt');
   assert.equal(idleResult.manifest.capture?.recorder, 'screencast', 'manifest records the recorder');

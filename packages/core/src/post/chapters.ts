@@ -61,6 +61,12 @@ export function computeChapters(manifest: TimingManifest, opts: ChapterOptions):
   return chapters.filter((c) => c.endMs > c.startMs);
 }
 
+/** Shift every chapter by `byMs` — used to slide body chapters past a prepended intro card (#37). */
+export function shiftChapters(chapters: Chapter[], byMs: number): Chapter[] {
+  if (!byMs) return chapters;
+  return chapters.map((c) => ({ ...c, startMs: c.startMs + byMs, endMs: c.endMs + byMs }));
+}
+
 /**
  * A short, human chapter title from a step's narration: its first sentence,
  * trimmed and capped. Falls back to a humanized step id for silent steps.

@@ -9,8 +9,11 @@ import {
   generateChaptersVtt,
   generateChaptersTxt,
   generateChaptersFfmetadata,
+  shiftChapters,
+  type Chapter,
 } from '../post/chapters.js';
 import { DEFAULT_CAPTION_STYLE, renderCaptionImages, type CaptionImage } from '../post/captions.js';
+import { cardContentsFor, renderCards, type RenderedCard } from '../post/cards.js';
 import { buildGifArgs, resolveGifWindow, DEFAULT_GIF, type GifConfig } from '../post/gif.js';
 import { buildZoomFilter, computeZoomWindows, DEFAULT_ZOOM_FACTOR } from '../post/zoom.js';
 import {
@@ -37,6 +40,11 @@ export interface PostPhaseOptions {
   gif?: boolean | Partial<GifConfig>;
   /** Emit chapter markers (MP4 chapter track + .chapters.vtt/.txt sidecars). Default true. */
   chapters?: boolean;
+  /**
+   * Intro/recap card text (#37). When present (and not disabled), cards are
+   * composited around the body and their durations fold into the timeline.
+   */
+  cards?: { title: string; objectives?: string[]; summary?: string };
 }
 
 export interface PostPhaseResult {
@@ -47,7 +55,15 @@ export interface PostPhaseResult {
   chaptersTxtPath: string | null;
   videoClockOffsetMs: number;
   outputDurationMs: number;
+  /** Total ms of intro+recap cards composited into the output (#37); 0 when none. */
+  cardsDurationMs: number;
 }
+
+/** Resolved card files + durations passed to the ffmpeg merge (#37). */
+type PostMergeCards = {
+  intro?: { file: string; durationMs: number };
+  recap?: { file: string; durationMs: number };
+};
 
 /**
  * Phase 3 — single ffmpeg invocation: trim pre-roll/tail, lay narration over
@@ -112,9 +128,39 @@ export async function runPostPhase(
   }
   const mapMs = timeMap ? (ms: number) => timeMap!.mapS(ms / 1000) * 1000 : undefined;
 
+  // Cards (#37): render the intro/recap slates first so their durations are
+  // known before laying out the sidecars. An intro card slides the whole body
+  // forward inside the final file, so every final-file timestamp (SRT, chapters,
+  // any GIF excerpt) is offset by introDurationMs. The body sub-graph itself
+  // stays body-relative — the ffmpeg concat does the shifting.
+  let mergeCards: PostMergeCards | undefined;
+  let introDurationMs = 0;
+  let recapDurationMs = 0;
+  if (opts.cards) {
+    const contents = cardContentsFor(opts.cards);
+    if (contents) {
+      const toRender = [contents.intro, contents.recap].filter(
+        (c): c is NonNullable<typeof c> => !!c,
+      );
+      const rendered: RenderedCard[] = await renderCards(toRender, join(opts.workDir, 'cards'), opts.viewport);
+      const intro = rendered.find((c) => c.kind === 'intro');
+      const recap = rendered.find((c) => c.kind === 'recap');
+      introDurationMs = intro?.durationMs ?? 0;
+      recapDurationMs = recap?.durationMs ?? 0;
+      mergeCards = {
+        intro: intro && { file: intro.file, durationMs: intro.durationMs },
+        recap: recap && { file: recap.file, durationMs: recap.durationMs },
+      };
+      logger.info(
+        `post: cards — ${[intro && 'intro', recap && 'recap'].filter(Boolean).join(' + ')} (${((introDurationMs + recapDurationMs) / 1000).toFixed(1)}s)`,
+      );
+    }
+  }
+  const cardsDurationMs = introDurationMs + recapDurationMs;
+
   let srtPath: string | null = null;
   if (opts.subtitles === 'sidecar') {
-    const srt = generateSrt(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs });
+    const srt = generateSrt(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs, offsetMs: introDurationMs });
     srtPath = base('.srt');
     await writeFile(srtPath, srt);
   }
@@ -139,11 +185,22 @@ export async function runPostPhase(
     const timelineDurationMs = timeMap
       ? timeMap.outputDurationS * 1000
       : manifest.totalDurationMs - trimStartMs;
-    const chapters = computeChapters(manifest, {
+    const bodyChapters = computeChapters(manifest, {
       trimStartMs,
       mapMs,
       outputDurationMs: timelineDurationMs,
     });
+    // Slide body chapters past the intro card and bookend with card chapters so
+    // markers land on the composed final-file timeline (#37).
+    const chapters: Chapter[] = [];
+    if (mergeCards?.intro) {
+      chapters.push({ id: '__intro__', title: 'Objectives', startMs: 0, endMs: introDurationMs });
+    }
+    chapters.push(...shiftChapters(bodyChapters, introDurationMs));
+    if (mergeCards?.recap) {
+      const recapStartMs = introDurationMs + timelineDurationMs;
+      chapters.push({ id: '__recap__', title: 'Recap', startMs: recapStartMs, endMs: recapStartMs + recapDurationMs });
+    }
     if (chapters.length > 0) {
       chaptersVttPath = base('.chapters.vtt');
       chaptersTxtPath = base('.chapters.txt');
@@ -190,6 +247,7 @@ export async function runPostPhase(
       : undefined,
     zoomFilter,
     chaptersFile,
+    cards: mergeCards,
     retime:
       timeMap && mapMs
         ? {
@@ -209,15 +267,21 @@ export async function runPostPhase(
   let gifPath: string | null = null;
   if (opts.gif) {
     const gifConfig = { ...DEFAULT_GIF, ...(typeof opts.gif === 'object' ? opts.gif : {}) };
-    const window = gifConfig.steps
-      ? resolveGifWindow(manifest, trimStartMs, gifConfig.steps, mapMs)
-      : undefined;
+    // The GIF reads the composed final file, so a step excerpt and its captions
+    // carry the same intro-card offset as everything else on that timeline (#37).
+    let window = gifConfig.steps ? resolveGifWindow(manifest, trimStartMs, gifConfig.steps, mapMs) : undefined;
+    if (window && introDurationMs) {
+      window = { startMs: window.startMs + introDurationMs, endMs: window.endMs + introDurationMs };
+    }
     // GIFs are silent — burn captions unless the video already has them.
     let gifCaptions: { items: CaptionImage[]; bottomMarginPx: number } | undefined;
     if (gifConfig.captions && opts.subtitles !== 'burn') {
-      const cues = computeCues(manifest, { leadInMs: opts.leadInMs, trimStartMs, mapMs }).filter(
-        (c) => !window || (c.endMs > window.startMs && c.startMs < window.endMs),
-      );
+      const cues = computeCues(manifest, {
+        leadInMs: opts.leadInMs,
+        trimStartMs,
+        mapMs,
+        offsetMs: introDurationMs,
+      }).filter((c) => !window || (c.endMs > window.startMs && c.startMs < window.endMs));
       const style = { ...DEFAULT_CAPTION_STYLE, ...opts.captionStyle };
       gifCaptions = {
         items: await renderCaptionImages(cues, style, join(opts.workDir, 'captions-gif'), opts.viewport.width),
@@ -246,5 +310,6 @@ export async function runPostPhase(
     chaptersTxtPath,
     videoClockOffsetMs: videoOffsetMs,
     outputDurationMs,
+    cardsDurationMs,
   };
 }

@@ -98,6 +98,12 @@ export async function render<S = unknown>(
       captionStyle: options.captionStyle,
       gif: options.gif,
       chapters: options.chapters,
+      // Intro/recap cards (#37): driven by the (localized) tutorial's objectives
+      // and summary; suppressible per-render with cards: false.
+      cards:
+        (options.cards ?? true) && (tutorial.objectives?.length || tutorial.summary?.trim())
+          ? { title: tutorial.title, objectives: tutorial.objectives, summary: tutorial.summary }
+          : undefined,
     });
 
     if (!(options.keepWorkDir ?? options.debug ?? false)) {
@@ -167,6 +173,7 @@ function partialResult(workDir: string, output: string, manifest: TimingManifest
     chaptersTxtPath: null,
     videoClockOffsetMs: manifest.videoClockOffsetMs ?? 0,
     outputDurationMs: 0,
+    cardsDurationMs: 0,
     manifest,
     workDir,
   };

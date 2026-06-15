@@ -136,6 +136,16 @@ export interface MergeArgsInput {
   zoomFilter?: string;
   /** ffmetadata file with chapter blocks; mapped into the MP4 as a chapter track. See post/chapters.ts. */
   chaptersFile?: string;
+  /**
+   * Intro/recap cards (#37): still PNGs held for durationMs and concatenated
+   * around the body. The body keeps body-relative timing (captions, zoom, audio
+   * delays) — the concat shifts it after the intro, so only the external
+   * sidecars (srt, chapters) carry the intro offset. See post/cards.ts.
+   */
+  cards?: {
+    intro?: { file: string; durationMs: number };
+    recap?: { file: string; durationMs: number };
+  };
   /** Idle speed-up retiming; see post/retime.ts. */
   retime?: {
     /** setpts filter implementing the time map. */
@@ -191,15 +201,25 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
   if (input.zoomFilter) vf.push(input.zoomFilter);
   vf.push(`scale=${input.targetWidth}:${input.targetHeight}:flags=lanczos`);
 
+  // With cards, the body is one segment of a concat; keep it on its own
+  // intermediate labels (vbody/abody) and let the concat below emit vout/aout.
+  const hasIntro = !!input.cards?.intro;
+  const hasRecap = !!input.cards?.recap;
+  const hasCards = hasIntro || hasRecap;
+  const vBody = hasCards ? 'vbody0' : 'vout';
+  const aBody = hasCards ? 'abody' : 'aout';
+  const fps = input.retime?.fps ?? manifest.fps;
+
   // Burned captions: one overlay per cue, after scale (and after zoom — the
-  // captions must not be zoomed), each enabled for its display window.
+  // captions must not be zoomed), each enabled for its display window. Windows
+  // stay body-relative even with cards — the concat shifts them.
   const captionItems = input.captions?.items ?? [];
-  filters.push(`[0:v]${vf.join(',')}[${captionItems.length ? 'vbase' : 'vout'}]`);
+  filters.push(`[0:v]${vf.join(',')}[${captionItems.length ? 'vbase' : vBody}]`);
   captionItems.forEach((c, k) => {
     args.push('-i', c.file);
     const inputIndex = 1 + narrated.length + k;
     const from = `[${k === 0 ? 'vbase' : `vcap${k - 1}`}]`;
-    const to = k === captionItems.length - 1 ? '[vout]' : `[vcap${k}]`;
+    const to = k === captionItems.length - 1 ? `[${vBody}]` : `[vcap${k}]`;
     filters.push(
       `${from}[${inputIndex}:v]overlay=(W-w)/2:H-h-${input.captions!.bottomMarginPx}:enable='between(t,${(c.startMs / 1000).toFixed(3)},${(c.endMs / 1000).toFixed(3)})'${to}`,
     );
@@ -224,10 +244,32 @@ export function buildMergeArgs(input: MergeArgsInput): string[] {
   });
   if (narrated.length > 0) {
     filters.push(
-      `${mixInputs.join('')}amix=inputs=${mixInputs.length}:duration=first:normalize=0[aout]`,
+      `${mixInputs.join('')}amix=inputs=${mixInputs.length}:duration=first:normalize=0[${aBody}]`,
     );
   } else {
-    filters.push('[abase]acopy[aout]');
+    filters.push(`[abase]acopy[${aBody}]`);
+  }
+
+  // Cards (#37): normalize the body for concat, build each card from a looped
+  // still + matching silence, and concat [intro?] body [recap?] → vout/aout.
+  if (hasCards) {
+    filters.push(`[vbody0]fps=${fps},format=yuv420p,setsar=1[vbody]`);
+    let cardInput = 1 + narrated.length + captionItems.length + (input.chaptersFile ? 1 : 0);
+    const segV: string[] = [];
+    const segA: string[] = [];
+    const addCard = (card: { file: string; durationMs: number }, v: string, a: string) => {
+      const durS = (card.durationMs / 1000).toFixed(3);
+      args.push('-loop', '1', '-framerate', String(fps), '-t', durS, '-i', card.file);
+      filters.push(
+        `[${cardInput++}:v]scale=${input.targetWidth}:${input.targetHeight}:flags=lanczos,fps=${fps},format=yuv420p,setsar=1[${v}]`,
+      );
+      filters.push(`anullsrc=channel_layout=mono:sample_rate=48000,atrim=duration=${durS}[${a}]`);
+    };
+    if (input.cards!.intro) { addCard(input.cards!.intro, 'vintro', 'aintro'); segV.push('[vintro]'); segA.push('[aintro]'); }
+    segV.push('[vbody]'); segA.push('[abody]');
+    if (input.cards!.recap) { addCard(input.cards!.recap, 'vrecap', 'arecap'); segV.push('[vrecap]'); segA.push('[arecap]'); }
+    const pairs = segV.map((v, i) => `${v}${segA[i]}`).join('');
+    filters.push(`${pairs}concat=n=${segV.length}:v=1:a=1[vout][aout]`);
   }
 
   args.push(

@@ -43,6 +43,17 @@ export function validateTutorial<S = unknown>(t: Tutorial<S>): void {
       throw new Error(`Tutorial "${t.id}": ${hook} must be a function`);
     }
   }
+  if (t.objectives != null) {
+    if (!Array.isArray(t.objectives) || t.objectives.some((o) => typeof o !== 'string')) {
+      throw new Error(`Tutorial "${t.id}": objectives must be an array of strings`);
+    }
+    if (t.objectives.some((o) => !o.trim())) {
+      throw new Error(`Tutorial "${t.id}": objectives must not contain empty strings`);
+    }
+  }
+  if (t.summary != null && typeof t.summary !== 'string') {
+    throw new Error(`Tutorial "${t.id}": summary must be a string`);
+  }
   const seen = new Set<string>();
   t.steps.forEach((s, i) => {
     if (typeof s.narration !== 'string') {

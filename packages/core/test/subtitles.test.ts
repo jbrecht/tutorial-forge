@@ -60,4 +60,11 @@ describe('generateSrt', () => {
     expect(cues[0]).toBe('1\n00:00:00,600 --> 00:00:02,600\nFirst line.');
     expect(cues[1]).toContain('2\n00:00:04,100 --> 00:00:07,100\nSecond line.');
   });
+
+  it('shifts every cue by offsetMs (an intro card prepended to the final file)', () => {
+    const srt = generateSrt(manifest, { leadInMs: 300, trimStartMs: 4700, offsetMs: 4000 });
+    const cues = srt.trim().split('\n\n');
+    expect(cues[0]).toBe('1\n00:00:04,600 --> 00:00:06,600\nFirst line.'); // 600 + 4000
+    expect(cues[1]).toContain('2\n00:00:08,100 --> 00:00:11,100\nSecond line.'); // 4100 + 4000
+  });
 });

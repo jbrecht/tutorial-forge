@@ -94,6 +94,28 @@ Silence a single intentional step with `step(narration, run, { lint: false })`. 
 
 Every render emits chapter markers (an MP4 chapter track plus `.chapters.vtt` and `.chapters.txt` sidecars) so learners can self-pace and jump between segments. There's one chapter per narrated step — silent steps fold into the chapter before them — and each chapter title is the **first sentence of that step's narration**. That makes the opening line of every step do double duty: write a short, descriptive first sentence and you get clean chapter titles for free. See [Render → Chapters](getting-started.md#render) for the output formats and how to disable them.
 
+## Intro & recap cards
+
+Declare what the viewer will be able to do and what they accomplished, and tutorial-forge composites a **title/objective card** before the first step and a **recap card** after the last — making the advance-organizer and summary the best tutorials already model in narration explicit and reusable. Both are optional; a tutorial that declares neither renders exactly as before.
+
+```ts
+export default tutorial('Getting started with Lumen Events', steps, {
+  id: 'getting-started',
+  objectives: [
+    'Create your first event',
+    'Set its name and type',
+    'Enable public event pages in Settings',
+  ],
+  summary: 'Your event is drafted and your workspace is configured — you are ready to invite attendees.',
+});
+```
+
+- The intro card shows the tutorial title and the objectives as a checklist; the recap card shows the summary. Each holds on screen for a readable duration derived from its text.
+- Cards are **visual only** — they aren't narrated. To *speak* your objectives, open step 1 with them in narration as usual (the example does both); this avoids forcing the [redundancy](#writing-narration-that-teaches) of identical on-screen text and voice-over.
+- Card durations fold into the timeline: the SRT, chapter markers, and any GIF excerpt all shift to stay aligned, and the chapter track gains an **Objectives** chapter at the start and a **Recap** chapter at the end.
+- **Localization:** the card *content* respects `--lang`. In a `<tutorial>.<lang>.json` sidecar, use the reserved keys `__objectives__` (one objective per line) and `__summary__` alongside your per-step translations; a language that omits them falls back to the source text with a warning. Note the fixed card chrome is not yet localized — the intro kicker ("In this tutorial you'll learn to"), the "Recap" heading, and the `Objectives`/`Recap` chapter titles stay in English regardless of `--lang`.
+- Suppress cards for a render without editing the tutorial with `--no-cards` (or `cards: false` in config / `RenderOptions`).
+
 ## Pacing
 
 Narration drives pacing. The pipeline synthesizes and measures every narration clip *first*; during recording each step is held on screen for at least `leadInMs` (default 300) + the clip's duration. If the action takes longer than the narration, the step holds until the action finishes instead. You never specify durations by hand.

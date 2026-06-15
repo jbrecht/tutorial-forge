@@ -5,6 +5,7 @@ import {
   generateChaptersVtt,
   generateChaptersTxt,
   generateChaptersFfmetadata,
+  shiftChapters,
   vttTime,
   stampTime,
 } from '../src/post/chapters.js';
@@ -72,6 +73,24 @@ describe('computeChapters', () => {
     const chapters = computeChapters(dup, { trimStartMs: 4700, outputDurationMs: 15_300 });
     // step a → start 0, step c → start 300; both kept and non-zero here, sanity check ordering
     expect(chapters.every((c) => c.endMs > c.startMs)).toBe(true);
+  });
+});
+
+describe('shiftChapters', () => {
+  const chapters = [
+    { id: 'a', title: 'A', startMs: 0, endMs: 3000 },
+    { id: 'b', title: 'B', startMs: 3000, endMs: 8000 },
+  ];
+
+  it('slides every chapter by the offset (intro card prepended)', () => {
+    expect(shiftChapters(chapters, 4000)).toEqual([
+      { id: 'a', title: 'A', startMs: 4000, endMs: 7000 },
+      { id: 'b', title: 'B', startMs: 7000, endMs: 12_000 },
+    ]);
+  });
+
+  it('returns the input unchanged for a zero offset', () => {
+    expect(shiftChapters(chapters, 0)).toBe(chapters);
   });
 });
 
