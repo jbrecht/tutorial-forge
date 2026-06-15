@@ -1,6 +1,6 @@
 {
   "name": "tutorial-forge-cli",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "description": "CLI for tutorial-forge: render scripted Playwright walkthroughs into narrated tutorial videos",
   "type": "module",
   "license": "PolyForm-Small-Business-1.0.0",
