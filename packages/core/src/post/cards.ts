@@ -80,9 +80,9 @@ export function cardHtml(card: CardContent): string {
 }
 
 /**
- * Readable hold for a card: enough time to read its text comfortably (~3.5 ms
- * per character at a relaxed pace), clamped to a sane [3s, 12s] range so a
- * one-word card still lingers and a wordy one doesn't stall the video.
+ * Readable hold for a card: enough time to read its text comfortably (a 1.5s
+ * base plus ~35 ms per character at a relaxed pace), clamped to a sane [3s, 12s]
+ * range so a one-word card still lingers and a wordy one doesn't stall the video.
  */
 export function computeCardDurationMs(card: CardContent): number {
   const chars = [card.heading, ...card.lines].join(' ').trim().length;

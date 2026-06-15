@@ -179,6 +179,78 @@ describe('buildMergeArgs', () => {
       expect(args[args.indexOf('-map') + 1]).toBe('[vout]');
       expect(args.slice(args.indexOf('-map') + 2).includes('[aout]')).toBe(true);
     });
+
+    const retime = {
+      filter: 'setpts=0.5*PTS',
+      mapMs: (ms: number) => ms / 2,
+      outputDurationMs: 8650,
+      fps: 25,
+    };
+
+    it('composes with idle-speedup retime: body normalized at the retime fps, indices unchanged', () => {
+      const args = argsFor({ cards, retime });
+      const filter = args[args.indexOf('-filter_complex') + 1]!;
+      // retime runs inside the body chain, before the concat boundary
+      expect(filter).toContain('setpts=0.5*PTS');
+      expect(filter.indexOf('setpts=0.5*PTS')).toBeLessThan(filter.indexOf('[vbody0]'));
+      expect(filter).toContain('[vbody0]fps=25,format=yuv420p,setsar=1[vbody]');
+      // retime adds no input, so card images keep indices 3/4 and concat is intact
+      const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
+      expect(inputs).toEqual(['/work/raw.webm', '/audio/a.wav', '/audio/c.wav', '/c/intro.png', '/c/recap.png']);
+      expect(filter).toContain('[3:v]scale=1920:1080:flags=lanczos,fps=25,format=yuv420p,setsar=1[vintro]');
+      expect(filter).toContain('concat=n=3:v=1:a=1[vout][aout]');
+    });
+
+    it('composes with zoom: zoom sits in the body chain, card indices unaffected', () => {
+      const args = argsFor({ cards, zoomFilter: 'zoompan=z=1.2:d=1' });
+      const filter = args[args.indexOf('-filter_complex') + 1]!;
+      expect(filter.indexOf('zoompan=z=1.2:d=1')).toBeLessThan(filter.indexOf('[vbody0]'));
+      // zoom adds no input → cards still at 3/4
+      expect(filter).toContain('[3:v]scale=1920:1080:flags=lanczos');
+      expect(filter).toContain('[4:v]scale=1920:1080:flags=lanczos');
+      expect(filter).toContain('concat=n=3:v=1:a=1[vout][aout]');
+    });
+
+    it('kitchen sink — cards + captions + chapters + retime: input order + map_metadata index hold', () => {
+      const args = argsFor({
+        cards,
+        retime,
+        chaptersFile: '/work/chapters.ffmeta',
+        captions: { items: [{ file: '/cap/cue-01.png', startMs: 600, endMs: 2600 }], bottomMarginPx: 24 },
+      });
+      const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
+      // raw, 2 audio, 1 caption, ffmeta, intro, recap — cards always last
+      expect(inputs).toEqual([
+        '/work/raw.webm', '/audio/a.wav', '/audio/c.wav', '/cap/cue-01.png', '/work/chapters.ffmeta', '/c/intro.png', '/c/recap.png',
+      ]);
+      // chapters metadata index = raw + 2 audio + 1 caption = 4, unaffected by the trailing cards
+      expect(args[args.indexOf('-map_metadata') + 1]).toBe('4');
+      const filter = args[args.indexOf('-filter_complex') + 1]!;
+      // the caption overlay terminates at the body label (body-relative), then the body normalizes + concats
+      expect(filter).toContain("enable='between(t,0.600,2.600)'[vbody0]");
+      expect(filter).toContain('[5:v]scale=1920:1080:flags=lanczos,fps=25,format=yuv420p,setsar=1[vintro]');
+      expect(filter).toContain('[6:v]scale=1920:1080:flags=lanczos,fps=25,format=yuv420p,setsar=1[vrecap]');
+      expect(filter).toContain('concat=n=3:v=1:a=1[vout][aout]');
+    });
+
+    it('handles a fully silent tutorial with cards (acopy body audio feeds the concat)', () => {
+      const filter = argsFor({ cards, audioFiles: [null, null, null] })[
+        argsFor({ cards, audioFiles: [null, null, null] }).indexOf('-filter_complex') + 1
+      ]!;
+      expect(filter).toContain('[abase]acopy[abody]');
+      expect(filter).not.toContain('amix');
+      expect(filter).toContain('[vintro][aintro][vbody][abody][vrecap][arecap]concat=n=3:v=1:a=1[vout][aout]');
+    });
+  });
+
+  it('without cards, the graph is the pre-#37 shape — no body/concat scaffolding', () => {
+    const filter = argsFor()[argsFor().indexOf('-filter_complex') + 1]!;
+    for (const token of ['vbody0', 'vbody', 'concat=', 'vintro', 'vrecap', 'aintro', 'arecap']) {
+      expect(filter, `no-cards graph must not contain "${token}"`).not.toContain(token);
+    }
+    // body video flows straight to [vout]; audio mix straight to [aout]
+    expect(filter).toContain('[vout]');
+    expect(filter).toContain('amix=inputs=3:duration=first:normalize=0[aout]');
   });
 });
 

@@ -113,7 +113,7 @@ export default tutorial('Getting started with Lumen Events', steps, {
 - The intro card shows the tutorial title and the objectives as a checklist; the recap card shows the summary. Each holds on screen for a readable duration derived from its text.
 - Cards are **visual only** — they aren't narrated. To *speak* your objectives, open step 1 with them in narration as usual (the example does both); this avoids forcing the [redundancy](#writing-narration-that-teaches) of identical on-screen text and voice-over.
 - Card durations fold into the timeline: the SRT, chapter markers, and any GIF excerpt all shift to stay aligned, and the chapter track gains an **Objectives** chapter at the start and a **Recap** chapter at the end.
-- **Localization:** the cards respect `--lang`. In a `<tutorial>.<lang>.json` sidecar, use the reserved keys `__objectives__` (one objective per line) and `__summary__` alongside your per-step translations. A language that omits them falls back to the source text with a warning.
+- **Localization:** the card *content* respects `--lang`. In a `<tutorial>.<lang>.json` sidecar, use the reserved keys `__objectives__` (one objective per line) and `__summary__` alongside your per-step translations; a language that omits them falls back to the source text with a warning. Note the fixed card chrome is not yet localized — the intro kicker ("In this tutorial you'll learn to"), the "Recap" heading, and the `Objectives`/`Recap` chapter titles stay in English regardless of `--lang`.
 - Suppress cards for a render without editing the tutorial with `--no-cards` (or `cards: false` in config / `RenderOptions`).
 
 ## Pacing

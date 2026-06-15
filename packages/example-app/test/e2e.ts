@@ -136,13 +136,20 @@ try {
 
   // Idle speed-up: a tutorial with a long silent wait must come out shorter,
   // with narration offsets remapped (cue still starts after the lead-in).
+  // #37 — declares objectives/summary so this render exercises the hardest
+  // interaction: cards composited around an idle-speedup-retimed, screencast,
+  // burned-caption body that also exports a GIF excerpt.
   const idleTutorial = tutorial('Idle', [
     step('A short narrated step.', async () => {}, { id: 'narrated' }),
     step('', async (page) => {
       await page.waitForTimeout(4000); // silent dead time — the compression target
     }, { id: 'silent-wait' }),
     step('And a narrated wrap-up.', async () => {}, { id: 'outro' }),
-  ], { id: 'idle-demo' });
+  ], {
+    id: 'idle-demo',
+    objectives: ['See idle speed-up compress a long wait'],
+    summary: 'The silent wait was fast-forwarded.',
+  });
   const idleOutput = join(outDir, 'idle-demo.mp4');
   const idleResult = await render(idleTutorial, adapter, {
     tts: SilentProvider(),
@@ -156,9 +163,14 @@ try {
   });
   const idleUncompressedMs =
     idleResult.manifest.totalDurationMs - (idleResult.manifest.steps[0]!.startMs - 300);
+  // #37 — cards rendered on the retimed path; isolate the body (output minus the
+  // cards) and confirm the retimed body itself still saved >2s, so the card
+  // duration was added on top, not folded into the speed-up accounting.
+  assert.ok(idleResult.cardsDurationMs > 0, 'idle render composited cards on the retimed body');
+  const idleBodyMs = idleResult.outputDurationMs - idleResult.cardsDurationMs;
   assert.ok(
-    idleResult.outputDurationMs < idleUncompressedMs - 2000,
-    `idle speed-up saved >2s (${idleResult.outputDurationMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
+    idleBodyMs > 0 && idleBodyMs < idleUncompressedMs - 2000,
+    `retimed body saved >2s after removing ${idleResult.cardsDurationMs}ms of cards (body ${idleBodyMs}ms vs ${idleUncompressedMs}ms uncompressed)`,
   );
   assert.equal(idleResult.srtPath, null, 'burn mode writes no sidecar srt');
   assert.equal(idleResult.manifest.capture?.recorder, 'screencast', 'manifest records the recorder');
