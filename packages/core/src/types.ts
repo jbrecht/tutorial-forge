@@ -76,6 +76,35 @@ export interface Step<S = unknown> {
   settleUntil?: 'load' | 'domcontentloaded' | 'networkidle';
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
+  /**
+   * Opt this step out of the load-time pedagogy lints (see {@link LintOptions})
+   * — for an intentionally long narration or a deliberately multi-action step.
+   * Lints are warnings only and never fail a render; this just silences them.
+   */
+  lint?: false;
+}
+
+/**
+ * Tunes the load-time pedagogy lints in {@link validateTutorial}. These are
+ * advisory warnings about narration that demonstrates without teaching; they
+ * are *never* fatal and never change the rendered video. Set `Tutorial.lint`
+ * to `false` to turn them all off, or pass an object to tune them.
+ */
+export interface LintOptions {
+  /**
+   * Warn when a step's narration runs longer than this many words — a single
+   * step should carry one idea (the segmenting principle). Default 60. Set to 0
+   * to disable just this lint while keeping the others.
+   */
+  maxNarrationWords?: number;
+  /**
+   * Enable lower-confidence heuristic lints that are off by default because they
+   * can misfire on intentional authoring choices: a step bundling several
+   * instrumented actions (segmenting), and a tutorial whose first/last step
+   * doesn't open with an objective or close with a recap (advance-organizer /
+   * summary). Default false.
+   */
+  strict?: boolean;
 }
 
 export interface Tutorial<S = unknown> {
@@ -103,6 +132,11 @@ export interface Tutorial<S = unknown> {
    * Failures are logged, not fatal.
    */
   teardown?(page: Page, ctx: StepContext<S>): Promise<void>;
+  /**
+   * Tune or disable the load-time pedagogy lints (see {@link LintOptions}).
+   * Omitted → defaults on (over-long-narration only). `false` → all off.
+   */
+  lint?: LintOptions | false;
 }
 
 export interface TTSProvider {

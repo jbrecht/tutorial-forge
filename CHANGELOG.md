@@ -21,6 +21,7 @@ Everything below is opt-in. Notes for existing consumers:
 ## Unreleased
 
 - **Chapters / segmenting (#35).** Every render now emits chapter markers derived from the per-step timeline: an MP4 chapter track (QuickTime/VLC/most players), a `<id>.chapters.vtt` sidecar for web players, and a `<id>.chapters.txt` YouTube-style timestamp list. One chapter per narrated step (silent steps fold into the prior chapter); the title is the first sentence of the step's narration. On by default; disable with `--no-chapters` or `chapters: false`. Author-defined section grouping is a planned follow-up. Additive — no change to the rendered video itself.
+- **Teaching-narration guidance + germane lints (#36).** New "[Writing narration that teaches](docs/writing-tutorials.md#writing-narration-that-teaches)" guide covering the evidence-based principles the engine already supports (one idea per step, explain the *why*, signaling language, objective/recap framing, write for the ear, name what-and-where). Backed by advisory **load-time lints** in `tutorial()` that warn (never fail) on narration that demonstrates without teaching: over-long narration per step (on by default, threshold via `lint.maxNarrationWords`), plus strict-mode heuristics for steps bundling multiple instrumented actions and a missing objective/recap. Suppress per step with `step({ lint: false })` or globally with `tutorial(..., { lint: false })`. New `LintOptions` type exported.
 
 ## 0.10.0 — teardown safety & authoring state
 
