@@ -53,19 +53,43 @@ try {
   // boundaries derived from the manifest (one per narrated step, silent folded).
   // #37 — the getting-started tutorial declares objectives + summary, so the
   // chapter track is bookended by an Objectives and a Recap chapter (+2).
+  // #52 — the MP4 track and the .vtt keep that full list; the YouTube .txt is
+  // folded to clear YouTube's 10s floor (the card chapters are < 10s), so it's
+  // asserted against the floor rather than the full per-step list.
   assert.ok(result.chaptersVttPath && existsSync(result.chaptersVttPath), 'chapters vtt sidecar exists');
   assert.ok(result.chaptersTxtPath && existsSync(result.chaptersTxtPath), 'chapters txt sidecar exists');
-  assert.ok(readFileSync(result.chaptersVttPath!, 'utf8').startsWith('WEBVTT'), 'chapters vtt is well-formed');
   const narratedCount = result.manifest.steps.filter((s) => s.narration.trim()).length;
   const expectedChapters = narratedCount + 2; // intro (Objectives) + recap (Recap) cards
-  assert.equal(
-    readFileSync(result.chaptersTxtPath!, 'utf8').trim().split('\n').length,
-    expectedChapters,
-    'one chapter stamp per narrated step, plus intro + recap card chapters',
-  );
-  const chaptersTxt = readFileSync(result.chaptersTxtPath!, 'utf8');
-  assert.ok(/0:00 Objectives/.test(chaptersTxt), 'first chapter is the Objectives card at 0:00');
-  assert.ok(/ Recap\n?$/.test(chaptersTxt.trim() + '\n'), 'last chapter is the Recap card');
+
+  // Full per-step contract lives on the .vtt: WEBVTT header, one cue per
+  // chapter, bookended by the Objectives and Recap card chapters.
+  const vttText = readFileSync(result.chaptersVttPath!, 'utf8');
+  assert.ok(vttText.startsWith('WEBVTT'), 'chapters vtt is well-formed');
+  const vttTitles = vttText
+    .split('\n\n')
+    .slice(1) // drop the WEBVTT header block
+    .map((cue) => cue.trim().split('\n').pop()!.trim())
+    .filter(Boolean);
+  assert.equal(vttTitles.length, expectedChapters, 'vtt has one cue per narrated step, plus the two card chapters');
+  assert.equal(vttTitles[0], 'Objectives', 'first vtt chapter is the Objectives card');
+  assert.equal(vttTitles.at(-1), 'Recap', 'last vtt chapter is the Recap card');
+
+  // The YouTube .txt opens at 0:00 and every consecutive stamp is ≥10s apart
+  // (the fold guarantees the floor; a single collapsed chapter is also fine).
+  const txtStamps = readFileSync(result.chaptersTxtPath!, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => line.split(' ')[0]!);
+  assert.equal(txtStamps[0], '0:00', 'txt chapter list starts at 0:00');
+  const stampToSeconds = (stamp: string) =>
+    stamp.split(':').reverse().reduce((acc, part, i) => acc + Number(part) * 60 ** i, 0);
+  for (let i = 1; i < txtStamps.length; i++) {
+    assert.ok(
+      stampToSeconds(txtStamps[i]!) - stampToSeconds(txtStamps[i - 1]!) >= 10,
+      `txt chapter ${i} is ≥10s after the previous (YouTube activation floor)`,
+    );
+  }
+
   const probedChapters = JSON.parse(
     (await execFileAsync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_chapters', output])).stdout,
   ) as { chapters: unknown[] };

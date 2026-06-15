@@ -20,6 +20,7 @@ Everything below is opt-in. Notes for existing consumers:
 
 ## Unreleased
 
+- **Chapters now activate on YouTube & Vimeo (#52).** The emitted chapter artifacts respect each platform's activation rules so they don't silently fail on upload. The YouTube `.chapters.txt` list folds any sub-10s chapter into its neighbor — YouTube ignores the *entire* description chapter list if a single chapter is under 10s. Chapter titles are now capped at **50 characters** (Vimeo's limit, the strictest common target) instead of 60 — a behavior change to the default title cap (`ChapterOptions.maxTitleChars` / `deriveChapterTitle`), so titles of 51–60 chars that previously survived are now truncated. The MP4 chapter track and the `.chapters.vtt` (Vimeo/web) keep the full per-step list. New exports: `enforceMinChapterDuration`, `YOUTUBE_MIN_CHAPTER_MS`. Docs gained a "Getting chapters onto YouTube and Vimeo" section. No breaking signature changes.
 - **Fix flaky calibration-flash e2e check.** The integration test asserted `videoClockOffsetMs > 0`, but a flash detected on the recording's very first frame yields a legitimate offset of `0` (recordVideo coalesces the identical pre-flash blank frames), so the test failed ~1 run in 3 even though detection succeeded. It now re-detects the flash on the raw recording and asserts it was *found* (non-null), and that the pipeline used that offset. Production behavior was already correct — test-only change.
 
 ## 0.11.2 — fix cli dependency spec

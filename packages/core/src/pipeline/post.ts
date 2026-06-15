@@ -6,10 +6,12 @@ import { buildMergeArgs, detectFlashOffsetMs, probeDurationMs, runFfmpeg } from 
 import { computeCues, generateSrt } from '../post/subtitles.js';
 import {
   computeChapters,
+  enforceMinChapterDuration,
   generateChaptersVtt,
   generateChaptersTxt,
   generateChaptersFfmetadata,
   shiftChapters,
+  YOUTUBE_MIN_CHAPTER_MS,
   type Chapter,
 } from '../post/chapters.js';
 import { DEFAULT_CAPTION_STYLE, renderCaptionImages, type CaptionImage } from '../post/captions.js';
@@ -204,8 +206,15 @@ export async function runPostPhase(
     if (chapters.length > 0) {
       chaptersVttPath = base('.chapters.vtt');
       chaptersTxtPath = base('.chapters.txt');
+      // The MP4 track and the .vtt (Vimeo/web) keep the full per-step list —
+      // those players have no minimum-chapter rule. The YouTube .txt is folded
+      // to clear YouTube's ≥10s floor, which otherwise silently disables the
+      // whole description chapter list (including the Objectives/Recap cards).
       await writeFile(chaptersVttPath, generateChaptersVtt(chapters));
-      await writeFile(chaptersTxtPath, generateChaptersTxt(chapters));
+      await writeFile(
+        chaptersTxtPath,
+        generateChaptersTxt(enforceMinChapterDuration(chapters, YOUTUBE_MIN_CHAPTER_MS)),
+      );
       chaptersFile = join(opts.workDir, 'chapters.ffmeta');
       await writeFile(chaptersFile, generateChaptersFfmetadata(chapters));
       logger.info(`post: ${chapters.length} chapter(s) → ${basename(chaptersVttPath)} + MP4 markers`);

@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   computeChapters,
   deriveChapterTitle,
+  enforceMinChapterDuration,
   generateChaptersVtt,
   generateChaptersTxt,
   generateChaptersFfmetadata,
   shiftChapters,
   vttTime,
   stampTime,
+  YOUTUBE_MIN_CHAPTER_MS,
 } from '../src/post/chapters.js';
 import type { TimingManifest } from '../src/types.js';
 
@@ -118,6 +120,137 @@ describe('deriveChapterTitle', () => {
 
   it('humanizes the step id when narration is empty', () => {
     expect(deriveChapterTitle('', 'open-events_page')).toBe('Open Events Page');
+  });
+
+  it('caps at 50 characters by default (Vimeo title limit)', () => {
+    const title = deriveChapterTitle('B'.repeat(60) + '.', 'x');
+    expect(title).toHaveLength(50);
+    expect(title.endsWith('…')).toBe(true);
+  });
+});
+
+describe('enforceMinChapterDuration', () => {
+  it('folds a short interior chapter into the previous one (opener title kept)', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 20_000 },
+        { id: 'b', title: 'B', startMs: 20_000, endMs: 25_000 }, // 5s, too short
+        { id: 'c', title: 'C', startMs: 25_000, endMs: 50_000 },
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    expect(out).toEqual([
+      { id: 'a', title: 'A', startMs: 0, endMs: 25_000 }, // A absorbs B's span
+      { id: 'c', title: 'C', startMs: 25_000, endMs: 50_000 },
+    ]);
+  });
+
+  it('folds a short first chapter forward into the next, pulling its start to 0', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: 'intro', title: 'Objectives', startMs: 0, endMs: 6000 }, // 6s card, too short
+        { id: 'a', title: 'A', startMs: 6000, endMs: 30_000 },
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    expect(out).toEqual([{ id: 'a', title: 'A', startMs: 0, endMs: 30_000 }]);
+  });
+
+  it('folds a short trailing chapter into the previous one', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 30_000 },
+        { id: 'recap', title: 'Recap', startMs: 30_000, endMs: 34_000 }, // 4s, too short
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    expect(out).toEqual([{ id: 'a', title: 'A', startMs: 0, endMs: 34_000 }]);
+  });
+
+  it('collapses a chain of short chapters', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 4000 },
+        { id: 'b', title: 'B', startMs: 4000, endMs: 8000 },
+        { id: 'c', title: 'C', startMs: 8000, endMs: 40_000 },
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    // Both short openers fold forward; the substantive chapter survives at 0.
+    expect(out).toEqual([{ id: 'c', title: 'C', startMs: 0, endMs: 40_000 }]);
+  });
+
+  it('leaves a list where every chapter already clears the floor untouched', () => {
+    const chapters = [
+      { id: 'a', title: 'A', startMs: 0, endMs: 15_000 },
+      { id: 'b', title: 'B', startMs: 15_000, endMs: 40_000 },
+    ];
+    expect(enforceMinChapterDuration(chapters, YOUTUBE_MIN_CHAPTER_MS)).toEqual(chapters);
+  });
+
+  it('is a no-op for minMs <= 0 or a single chapter', () => {
+    const chapters = [{ id: 'a', title: 'A', startMs: 0, endMs: 3000 }];
+    expect(enforceMinChapterDuration(chapters, 0)).toBe(chapters);
+    expect(enforceMinChapterDuration(chapters, YOUTUBE_MIN_CHAPTER_MS)).toBe(chapters);
+  });
+
+  it('folds a short trailing chapter into a previous chapter that is also short', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 30_000 },
+        { id: 'b', title: 'B', startMs: 30_000, endMs: 33_000 }, // 3s
+        { id: 'c', title: 'C', startMs: 33_000, endMs: 36_000 }, // 3s, last
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    // B folds into A; the still-short tail C then folds into A as well (exercises the i-- re-check).
+    expect(out).toEqual([{ id: 'a', title: 'A', startMs: 0, endMs: 36_000 }]);
+  });
+
+  it('handles the real composed list: short Objectives card + body + short Recap card', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: '__intro__', title: 'Objectives', startMs: 0, endMs: 6000 }, // 6s card
+        { id: 'a', title: 'A', startMs: 6000, endMs: 20_000 },
+        { id: 'b', title: 'B', startMs: 20_000, endMs: 40_000 },
+        { id: '__recap__', title: 'Recap', startMs: 40_000, endMs: 44_000 }, // 4s card
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    // Objectives folds forward into A (start → 0); Recap folds back into B.
+    expect(out).toEqual([
+      { id: 'a', title: 'A', startMs: 0, endMs: 20_000 },
+      { id: 'b', title: 'B', startMs: 20_000, endMs: 44_000 },
+    ]);
+  });
+
+  it('guarantees the floor, contiguity, and a 0 start for arbitrary inputs', () => {
+    const inputs = [
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 4000 },
+        { id: 'b', title: 'B', startMs: 4000, endMs: 9000 },
+        { id: 'c', title: 'C', startMs: 9000, endMs: 11_000 },
+        { id: 'd', title: 'D', startMs: 11_000, endMs: 50_000 },
+      ],
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 12_000 },
+        { id: 'b', title: 'B', startMs: 12_000, endMs: 13_000 },
+        { id: 'c', title: 'C', startMs: 13_000, endMs: 30_000 },
+      ],
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 3000 },
+        { id: 'b', title: 'B', startMs: 3000, endMs: 6000 },
+      ],
+    ];
+    for (const input of inputs) {
+      const out = enforceMinChapterDuration(input, YOUTUBE_MIN_CHAPTER_MS);
+      expect(out[0]!.startMs).toBe(0); // playback always opens inside a chapter
+      for (let i = 0; i < out.length; i++) {
+        if (i > 0) expect(out[i]!.startMs).toBe(out[i - 1]!.endMs); // contiguous: no gaps or overlaps
+        // every survivor clears the floor, except when the whole list collapses to one
+        if (out.length > 1) expect(out[i]!.endMs - out[i]!.startMs).toBeGreaterThanOrEqual(YOUTUBE_MIN_CHAPTER_MS);
+      }
+    }
   });
 });
 
