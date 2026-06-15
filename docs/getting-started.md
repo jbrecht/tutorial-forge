@@ -96,7 +96,14 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 - a **`<id>.chapters.vtt`** sidecar for web players, and
 - a **`<id>.chapters.txt`** YouTube-style timestamp list to paste into a video description.
 
-One chapter per narrated step; silent steps fold into the chapter before them, and the title is the first sentence of the step's narration (so write a clear opening line). Chapters are on by default; disable with `--no-chapters` or `chapters: false` in config.
+One chapter per narrated step; silent steps fold into the chapter before them, and the title is the first sentence of the step's narration, capped at 50 characters (so write a clear, short opening line). Chapters are on by default; disable with `--no-chapters` or `chapters: false` in config.
+
+**Getting chapters onto YouTube and Vimeo.** Neither platform reads the embedded MP4 chapter track — each consumes one of the sidecars instead:
+
+- **YouTube** — paste `<id>.chapters.txt` into the video description. YouTube activates the list only when it has **at least three** chapters, the first is at **0:00**, and **every chapter is ≥ 10 seconds long** — and it silently ignores the *entire* list otherwise. tutorial-forge guarantees the 0:00 start and folds any sub-10s chapter into its neighbor in the `.txt`, so the list stays valid; a tutorial that ends up with fewer than three chapters simply won't show them on YouTube.
+- **Vimeo** — upload `<id>.chapters.vtt` under Settings → Interactive → Chapters. Titles are limited to 50 characters (which is why that's the default cap) and a video allows up to 80 chapters; chapters appear only in the Vimeo player, not when the video is embedded elsewhere.
+
+The MP4 chapter track is for desktop players (QuickTime, VLC) and keeps the full per-step granularity.
 
 > Per-step is the first cut. Author-defined section grouping — chapters that span several steps and map to named concepts — is a planned follow-up ([#35](https://github.com/jbrecht/tutorial-forge/issues/35)).
 
