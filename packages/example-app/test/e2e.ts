@@ -95,6 +95,8 @@ try {
     result.manifest.steps.some((s) => s.callouts.length > 0),
     'at least one callout was captured',
   );
+  // Relies on the range-tolerant flash threshold (#46) so this isn't flaky on
+  // CI's limited-range webm; a detected flash means clock calibration worked.
   assert.ok(result.videoClockOffsetMs > 0, 'calibration flash was detected');
   assert.equal(
     await detectFlashOffsetMs(output, 2),

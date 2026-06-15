@@ -82,13 +82,27 @@ export async function detectFlashOffsetMs(video: string, scanSeconds = 4): Promi
 }
 
 /**
+ * Minimum chroma average (on the 0–255 signalstats scale, neutral = 128) that
+ * BOTH U and V must clear for a frame to count as the magenta flash.
+ *
+ * Magenta (#ff00ff) is the only thing that pushes *both* chroma channels far
+ * above neutral at once — normal UI content lifts at most one (a blue button is
+ * high-U/low-V, red text low-U/high-V), so requiring both stays magenta-specific.
+ * A clean full-range flash measures UAVG≈201 / VAVG≈221, but the same frame
+ * decoded as **limited range** (16–235, which CI's webm pipeline often does)
+ * scales toward center to ≈177 / ≈195 — straddling the old 180/170 cutoff and
+ * causing intermittent misses (#46). 150 keeps a wide margin above neutral and
+ * above any single-channel UI colour while absorbing range/compression drift.
+ */
+export const FLASH_CHROMA_MIN = 150;
+
+/**
  * Parse signalstats metadata=print output. Frames arrive as
  *   frame:N pts:P pts_time:T
  *   lavfi.signalstats.UAVG=...
  *   lavfi.signalstats.VAVG=...
- * A full-frame magenta (#ff00ff) flash measures UAVG≈201 / VAVG≈221 in
- * Chromium's VP8 webm; we accept anything with both chroma averages far from
- * neutral (128) in the magenta direction.
+ * Returns the time of the first frame whose chroma reads as magenta (see
+ * {@link FLASH_CHROMA_MIN}), i.e. the calibration flash.
  */
 export function parseFlashFromMetadata(out: string): number | null {
   let ptsTime: number | null = null;
@@ -106,7 +120,7 @@ export function parseFlashFromMetadata(out: string): number | null {
     const v = /lavfi\.signalstats\.VAVG=([\d.]+)/.exec(line);
     if (v) vavg = parseFloat(v[1]!);
     if (ptsTime !== null && uavg !== null && vavg !== null) {
-      if (uavg > 180 && vavg > 170) return Math.round(ptsTime * 1000);
+      if (uavg > FLASH_CHROMA_MIN && vavg > FLASH_CHROMA_MIN) return Math.round(ptsTime * 1000);
       uavg = vavg = null;
     }
   }
