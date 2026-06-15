@@ -6,5 +6,7 @@
   "pick-type": "Luego elige el tipo de evento que mejor se ajuste al formato.",
   "create-event": "Haz clic en Crear evento. Guardar tarda un momento, y el nuevo evento aparece en la lista como borrador.",
   "settings": "Por último, visita Configuración para controlar los recordatorios y la visibilidad. Aquí activamos las páginas públicas de eventos.",
-  "wrap-up": "Eso es todo. Tu evento está creado, tu espacio de trabajo está configurado y ya puedes invitar a los asistentes."
+  "wrap-up": "Eso es todo. Tu evento está creado, tu espacio de trabajo está configurado y ya puedes invitar a los asistentes.",
+  "__objectives__": "Crear tu primer evento\nEstablecer su nombre y tipo\nActivar las páginas públicas de eventos en Configuración",
+  "__summary__": "Tu evento está creado y tu espacio de trabajo está configurado: ya puedes invitar a los asistentes."
 }

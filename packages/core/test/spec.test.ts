@@ -58,6 +58,30 @@ describe('tutorial()', () => {
     ).not.toThrow();
   });
 
+  it('rejects non-string objectives', () => {
+    expect(() =>
+      tutorial('x', [step('a', noop)], { objectives: ['ok', 42 as unknown as string] }),
+    ).toThrow(/objectives must be an array of strings/);
+  });
+
+  it('rejects empty-string objectives', () => {
+    expect(() => tutorial('x', [step('a', noop)], { objectives: ['ok', '  '] })).toThrow(
+      /objectives must not contain empty strings/,
+    );
+  });
+
+  it('rejects a non-string summary', () => {
+    expect(() =>
+      tutorial('x', [step('a', noop)], { summary: 123 as unknown as string }),
+    ).toThrow(/summary must be a string/);
+  });
+
+  it('accepts valid objectives and summary', () => {
+    expect(() =>
+      tutorial('x', [step('a', noop)], { objectives: ['Create an event'], summary: 'Done.' }),
+    ).not.toThrow();
+  });
+
   it('rejects an invalid settleUntil', () => {
     expect(() =>
       tutorial('x', [step('a', noop, { settleUntil: 'idle' as unknown as 'networkidle' })]),

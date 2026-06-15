@@ -66,4 +66,15 @@ export default tutorial('Getting started with Lumen Events', [
     async () => {},
     { id: 'wrap-up' },
   ),
-], { id: 'getting-started' });
+], {
+  id: 'getting-started',
+  // Intro/recap cards (#37): the advance-organizer and summary the narration
+  // already models, made explicit so they render as title/objective and recap
+  // slates around the video.
+  objectives: [
+    'Create your first event',
+    'Set its name and type',
+    'Enable public event pages in Settings',
+  ],
+  summary: 'Your event is drafted and your workspace is configured — you are ready to invite attendees.',
+});

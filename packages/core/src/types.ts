@@ -112,6 +112,20 @@ export interface Tutorial<S = unknown> {
   id: string;
   title: string;
   description?: string;
+  /**
+   * Learning objectives — what the viewer will be able to do by the end. When
+   * present, an intro card listing them is composited before the first step
+   * (advance-organizer / pre-training). Localized via the `__objectives__`
+   * reserved key in `translations` (newline-separated, one per line). Visual
+   * only — to *speak* the objectives, put them in step-1 narration as usual.
+   */
+  objectives?: string[];
+  /**
+   * Closing recap — what the viewer accomplished. When present, a recap card is
+   * composited after the final step (summary principle). Localized via the
+   * `__summary__` reserved key in `translations`. Visual only.
+   */
+  summary?: string;
   steps: Step<S>[];
   /**
    * Per-language narration overrides: lang → (step id → translated line).
@@ -216,6 +230,13 @@ export interface RenderOptions {
    * steps fold into the prior chapter. Default true.
    */
   chapters?: boolean;
+  /**
+   * Render the intro/recap cards from `Tutorial.objectives` / `Tutorial.summary`
+   * (#37) and composite them into the MP4. Default true; set false to suppress
+   * the cards for a render without editing the tutorial. No effect on a tutorial
+   * that declares neither.
+   */
+  cards?: boolean;
 }
 
 export interface CalloutRecord {

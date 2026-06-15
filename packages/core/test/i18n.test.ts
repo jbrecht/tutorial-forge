@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { localizeTutorial, availableLanguages } from '../src/i18n.js';
 import { tutorial, step } from '../src/spec.js';
+import { logger } from '../src/util/logger.js';
 
 const noop = async () => {};
 
@@ -59,6 +60,51 @@ describe('localizeTutorial', () => {
     const t = fixture();
     const es = localizeTutorial(t, 'es');
     expect(es.steps[0]!.run).toBe(t.steps[0]!.run);
+  });
+
+  it('localizes card objectives/summary via reserved keys without flagging them as unknown steps', () => {
+    const warns: string[] = [];
+    const spy = vi.spyOn(logger, 'warn').mockImplementation((m) => void warns.push(m));
+    try {
+      const t = tutorial('cards', [step('Hi.', noop, { id: 'only' })], {
+        id: 'cards',
+        objectives: ['Do A', 'Do B'],
+        summary: 'You did it.',
+        translations: {
+          es: {
+            only: 'Hola.',
+            __objectives__: 'Hacer A\nHacer B',
+            __summary__: 'Lo lograste.',
+          },
+        },
+      });
+      const es = localizeTutorial(t, 'es');
+      expect(es.objectives).toEqual(['Hacer A', 'Hacer B']);
+      expect(es.summary).toBe('Lo lograste.');
+      expect(warns.some((w) => /match no step/.test(w))).toBe(false); // reserved keys excluded
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('falls back to source card text and warns when reserved keys are missing', () => {
+    const warns: string[] = [];
+    const spy = vi.spyOn(logger, 'warn').mockImplementation((m) => void warns.push(m));
+    try {
+      const t = tutorial('cards', [step('Hi.', noop, { id: 'only' })], {
+        id: 'cards',
+        objectives: ['Do A'],
+        summary: 'You did it.',
+        translations: { es: { only: 'Hola.' } },
+      });
+      const es = localizeTutorial(t, 'es');
+      expect(es.objectives).toEqual(['Do A']); // source fallback
+      expect(es.summary).toBe('You did it.');
+      expect(warns.some((w) => /no __objectives__ translation/.test(w))).toBe(true);
+      expect(warns.some((w) => /no __summary__ translation/.test(w))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

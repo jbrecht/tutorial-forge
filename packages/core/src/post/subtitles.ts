@@ -17,15 +17,23 @@ export interface CueOptions {
   trimStartMs: number;
   /** Optional retime map (idle speed-up): trimmed-timeline ms → output ms. */
   mapMs?: (ms: number) => number;
+  /**
+   * Shift every cue by this many ms — the duration of an intro card prepended to
+   * the final file (#37), so the SRT lines up with the body inside the composed
+   * video. Default 0. (Burned captions overlay the body *before* the card concat,
+   * so they pass 0.)
+   */
+  offsetMs?: number;
 }
 
 /** One cue per narrated step, on the final output timeline. Shared by SRT and burned captions. */
 export function computeCues(manifest: TimingManifest, opts: CueOptions): Cue[] {
   const mapMs = opts.mapMs ?? ((ms: number) => ms);
+  const offsetMs = opts.offsetMs ?? 0;
   const cues: Cue[] = [];
   for (const step of manifest.steps) {
     if (!step.narration.trim() || step.audioDurationMs <= 0) continue;
-    const startMs = mapMs(step.startMs + opts.leadInMs - opts.trimStartMs);
+    const startMs = mapMs(step.startMs + opts.leadInMs - opts.trimStartMs) + offsetMs;
     cues.push({
       text: step.narration,
       startMs,

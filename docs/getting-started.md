@@ -100,6 +100,8 @@ One chapter per narrated step; silent steps fold into the chapter before them, a
 
 > Per-step is the first cut. Author-defined section grouping — chapters that span several steps and map to named concepts — is a planned follow-up ([#35](https://github.com/jbrecht/tutorial-forge/issues/35)).
 
+**Intro & recap cards:** a tutorial that declares `objectives` and/or a `summary` gets a title/objective card composited before the first step and a recap card after the last — opening by telling learners what they'll be able to do and closing by consolidating it. Card durations fold into the timeline (subtitles, chapters, and GIF excerpts stay aligned; the chapter track gains **Objectives** and **Recap** chapters). On by default when present; disable with `--no-cards` or `cards: false`. See [Writing tutorials → Intro & recap cards](writing-tutorials.md#intro--recap-cards).
+
 ## Recorders
 
 Two capture implementations, selected with `--recorder` or `recorder:` in config:

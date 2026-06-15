@@ -121,6 +121,65 @@ describe('buildMergeArgs', () => {
     // overlays come after scale so zoom/scale never distort the captions
     expect(filter.indexOf('scale=')).toBeLessThan(filter.indexOf('overlay='));
   });
+
+  describe('cards (#37)', () => {
+    const cards = {
+      intro: { file: '/c/intro.png', durationMs: 4000 },
+      recap: { file: '/c/recap.png', durationMs: 5000 },
+    };
+
+    it('appends looped card image inputs after the chapters ffmetadata', () => {
+      const args = argsFor({ cards, chaptersFile: '/work/chapters.ffmeta' });
+      const inputs = args.flatMap((a, i) => (a === '-i' ? [args[i + 1]] : []));
+      expect(inputs).toEqual([
+        '/work/raw.webm', '/audio/a.wav', '/audio/c.wav', '/work/chapters.ffmeta', '/c/intro.png', '/c/recap.png',
+      ]);
+      // each card image is looped into a fixed-duration still
+      expect(args.join(' ')).toContain('-loop 1 -framerate 25 -t 4.000 -i /c/intro.png');
+      expect(args.join(' ')).toContain('-loop 1 -framerate 25 -t 5.000 -i /c/recap.png');
+      // the chapters metadata index is unaffected by the trailing card inputs
+      expect(args[args.indexOf('-map_metadata') + 1]).toBe('3');
+    });
+
+    it('concatenates [intro] body [recap] into vout/aout', () => {
+      const filter = argsFor({ cards })[argsFor({ cards }).indexOf('-filter_complex') + 1]!;
+      // body keeps its own intermediate labels, normalized for concat
+      expect(filter).toContain('[0:v]trim=');
+      expect(filter).toContain('[vbody0]');
+      expect(filter).toContain('[vbody0]fps=25,format=yuv420p,setsar=1[vbody]');
+      expect(filter).toContain('amix=inputs=3:duration=first:normalize=0[abody]');
+      // card video segments scaled + normalized; card audio is matching silence
+      expect(filter).toContain('[3:v]scale=1920:1080:flags=lanczos,fps=25,format=yuv420p,setsar=1[vintro]');
+      expect(filter).toContain('anullsrc=channel_layout=mono:sample_rate=48000,atrim=duration=4.000[aintro]');
+      expect(filter).toContain('[4:v]scale=1920:1080:flags=lanczos,fps=25,format=yuv420p,setsar=1[vrecap]');
+      expect(filter).toContain('atrim=duration=5.000[arecap]');
+      expect(filter).toContain('[vintro][aintro][vbody][abody][vrecap][arecap]concat=n=3:v=1:a=1[vout][aout]');
+    });
+
+    it('handles an intro-only card (concat of 2 segments)', () => {
+      const filter = argsFor({ cards: { intro: cards.intro } })[
+        argsFor({ cards: { intro: cards.intro } }).indexOf('-filter_complex') + 1
+      ]!;
+      expect(filter).toContain('[vintro][aintro][vbody][abody]concat=n=2:v=1:a=1[vout][aout]');
+      expect(filter).not.toContain('vrecap');
+    });
+
+    it('keeps body-relative caption windows; concat shifts them', () => {
+      const filter = argsFor({
+        cards: { intro: cards.intro },
+        captions: { items: [{ file: '/cap/cue-01.png', startMs: 600, endMs: 2600 }], bottomMarginPx: 24 },
+      })[argsFor({ cards: { intro: cards.intro }, captions: { items: [{ file: '/cap/cue-01.png', startMs: 600, endMs: 2600 }], bottomMarginPx: 24 } }).indexOf('-filter_complex') + 1]!;
+      // the last caption overlay terminates at the body label, not vout
+      expect(filter).toContain("enable='between(t,0.600,2.600)'[vbody0]");
+      expect(filter).toContain('concat=n=2:v=1:a=1[vout][aout]');
+    });
+
+    it('still maps vout/aout (unchanged) so downstream flags are untouched', () => {
+      const args = argsFor({ cards });
+      expect(args[args.indexOf('-map') + 1]).toBe('[vout]');
+      expect(args.slice(args.indexOf('-map') + 2).includes('[aout]')).toBe(true);
+    });
+  });
 });
 
 describe('parseFlashFromMetadata', () => {

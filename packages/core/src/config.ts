@@ -38,6 +38,8 @@ export interface ForgeConfig {
   contactSheet?: boolean;
   /** Emit chapter markers — MP4 chapter track + .chapters.vtt/.txt sidecars (#35). Default true. */
   chapters?: boolean;
+  /** Render intro/recap cards from each tutorial's objectives/summary (#37). Default true. */
+  cards?: boolean;
 }
 
 const configSchema = z.object({
@@ -99,6 +101,7 @@ const configSchema = z.object({
   recorder: z.enum(['video', 'screencast']).optional(),
   contactSheet: z.boolean().optional(),
   chapters: z.boolean().optional(),
+  cards: z.boolean().optional(),
 });
 
 export function defineConfig(config: ForgeConfig): ForgeConfig {

@@ -3,6 +3,14 @@ import { stepId } from './spec.js';
 import { logger } from './util/logger.js';
 
 /**
+ * Reserved translation-table keys for tutorial-level card text (they aren't step
+ * ids). `__objectives__` is newline-separated (one objective per line);
+ * `__summary__` is a single string. See {@link localizeTutorial}.
+ */
+export const OBJECTIVES_KEY = '__objectives__';
+export const SUMMARY_KEY = '__summary__';
+
+/**
  * Return a copy of the tutorial with narration swapped to the given language.
  * Translation tables are keyed by step id — give steps explicit ids so tables
  * stay stable when steps are reordered.
@@ -26,7 +34,8 @@ export function localizeTutorial<S = unknown>(tutorial: Tutorial<S>, lang: strin
   }
 
   const knownIds = new Set(tutorial.steps.map((s, i) => stepId(s, i)));
-  const unknown = Object.keys(table).filter((k) => !knownIds.has(k));
+  const reserved = new Set([OBJECTIVES_KEY, SUMMARY_KEY]);
+  const unknown = Object.keys(table).filter((k) => !knownIds.has(k) && !reserved.has(k));
   if (unknown.length) {
     logger.warn(
       `Tutorial "${tutorial.id}" [${lang}]: translation keys match no step: ${unknown.join(', ')}`,
@@ -49,7 +58,23 @@ export function localizeTutorial<S = unknown>(tutorial: Tutorial<S>, lang: strin
     );
   }
 
-  return { ...tutorial, steps };
+  // Card text (objectives/summary) is localized via reserved keys, falling back
+  // to the source strings when a table omits them.
+  const localized: Tutorial<S> = { ...tutorial, steps };
+  const objectivesTr = table[OBJECTIVES_KEY];
+  if (objectivesTr !== undefined) {
+    localized.objectives = objectivesTr.split('\n').map((l) => l.trim()).filter(Boolean);
+  } else if (tutorial.objectives?.length) {
+    logger.warn(`Tutorial "${tutorial.id}" [${lang}]: no ${OBJECTIVES_KEY} translation — using source objectives`);
+  }
+  const summaryTr = table[SUMMARY_KEY];
+  if (summaryTr !== undefined) {
+    localized.summary = summaryTr;
+  } else if (tutorial.summary?.trim()) {
+    logger.warn(`Tutorial "${tutorial.id}" [${lang}]: no ${SUMMARY_KEY} translation — using source summary`);
+  }
+
+  return localized;
 }
 
 /** Languages a tutorial can render in: the default language plus every translation table. */

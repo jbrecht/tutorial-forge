@@ -28,6 +28,8 @@ export interface RenderCmdOptions {
   contactSheet?: boolean;
   /** Chapter markers. Commander sets this false only when --no-chapters is passed (else true). */
   chapters?: boolean;
+  /** Intro/recap cards. Commander sets this false only when --no-cards is passed (else true). */
+  cards?: boolean;
 }
 
 /** Merge --gif/--gif-steps flags with config.gif (flags win; --gif-steps implies --gif). */
@@ -98,6 +100,8 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
         contactSheet: opts.contactSheet ?? config.contactSheet,
         // --no-chapters forces off; otherwise fall back to config (post defaults on).
         chapters: opts.chapters === false ? false : config.chapters,
+        // --no-cards forces off; otherwise fall back to config (post defaults on).
+        cards: opts.cards === false ? false : config.cards,
       });
       if (opts.phase === 'all' || opts.phase === 'post') {
         console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
