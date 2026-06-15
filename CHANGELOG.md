@@ -18,6 +18,10 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## 0.11.2 — fix cli dependency spec
+
+- **Fix broken `tutorial-forge-cli@0.11.1` install.** That version was published with `npm publish`, which does not rewrite the `workspace:*` protocol, so the CLI shipped with an unresolvable `tutorial-forge: workspace:*` dependency. Republished via `pnpm publish` so the dependency pins a real version. No source changes; `0.11.1` of the CLI is deprecated. The `tutorial-forge` library `0.11.1` was unaffected.
+
 ## 0.11.1 — relicense to PolyForm Small Business
 
 - **License change: MIT → PolyForm Small Business 1.0.0.** Tutorial Forge is now source-available rather than OSI open source. It remains **free** for individuals and for organizations with **fewer than 100 people and less than $1,000,000 USD revenue** — including CI/CD, internal tooling, and hosted-service use (company size is the only gate). Larger organizations require a commercial license; see [COMMERCIAL.md](COMMERCIAL.md). Previously published versions (≤ 0.11.0) remain available under their original MIT terms. The `license` field of both packages is now `PolyForm-Small-Business-1.0.0`.
