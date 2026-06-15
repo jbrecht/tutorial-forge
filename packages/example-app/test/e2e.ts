@@ -119,9 +119,15 @@ try {
     result.manifest.steps.some((s) => s.callouts.length > 0),
     'at least one callout was captured',
   );
-  // Relies on the range-tolerant flash threshold (#46) so this isn't flaky on
-  // CI's limited-range webm; a detected flash means clock calibration worked.
-  assert.ok(result.videoClockOffsetMs > 0, 'calibration flash was detected');
+  // Clock calibration: the magenta flash must be findable in the raw recording.
+  // Re-detect on the raw and assert it's *found* (and that the pipeline used
+  // that offset) rather than asserting videoClockOffsetMs > 0 — the offset is
+  // legitimately 0 when recordVideo's first encoded frame IS the flash (VP8
+  // coalesces the identical pre-flash blank frames), a correct detection the
+  // old `> 0` check flagged as failure ~1 run in 3. null means a genuine miss.
+  const rawFlashMs = await detectFlashOffsetMs(join(result.workDir, 'raw.webm'));
+  assert.ok(rawFlashMs !== null, 'calibration flash detected in the raw recording');
+  assert.equal(result.videoClockOffsetMs, rawFlashMs, 'pipeline used the detected flash offset');
   assert.equal(
     await detectFlashOffsetMs(output, 2),
     null,
