@@ -106,7 +106,7 @@ export function enforceMinChapterDuration(chapters: Chapter[], minMs: number): C
       result.splice(i, 1);
       i--; // re-check the now-longer previous chapter
     } else {
-      result[i + 1]!.startMs = c.startMs; // first chapter folds forward; next opens at its start (0)
+      result[i + 1]!.startMs = c.startMs; // first chapter folds forward; next opens at the folded chapter's start (0 for a well-formed list)
       result.splice(i, 1); // i stays 0 to re-check the new first chapter
     }
   }

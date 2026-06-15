@@ -20,7 +20,7 @@ Everything below is opt-in. Notes for existing consumers:
 
 ## Unreleased
 
-- **Chapters now activate on YouTube & Vimeo (#52).** The emitted chapter artifacts respect each platform's activation rules so they don't silently fail on upload. The YouTube `.chapters.txt` list folds any sub-10s chapter into its neighbor — YouTube ignores the *entire* description chapter list if a single chapter is under 10s. Chapter titles are now capped at **50 characters** (Vimeo's limit, the strictest common target) instead of 60. The MP4 chapter track and the `.chapters.vtt` (Vimeo/web) keep the full per-step list. Docs gained a "Getting chapters onto YouTube and Vimeo" section. No API change.
+- **Chapters now activate on YouTube & Vimeo (#52).** The emitted chapter artifacts respect each platform's activation rules so they don't silently fail on upload. The YouTube `.chapters.txt` list folds any sub-10s chapter into its neighbor — YouTube ignores the *entire* description chapter list if a single chapter is under 10s. Chapter titles are now capped at **50 characters** (Vimeo's limit, the strictest common target) instead of 60 — a behavior change to the default title cap (`ChapterOptions.maxTitleChars` / `deriveChapterTitle`), so titles of 51–60 chars that previously survived are now truncated. The MP4 chapter track and the `.chapters.vtt` (Vimeo/web) keep the full per-step list. New exports: `enforceMinChapterDuration`, `YOUTUBE_MIN_CHAPTER_MS`. Docs gained a "Getting chapters onto YouTube and Vimeo" section. No breaking signature changes.
 
 ## 0.11.2 — fix cli dependency spec
 

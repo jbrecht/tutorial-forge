@@ -73,12 +73,14 @@ export {
 export {
   computeChapters,
   deriveChapterTitle,
+  enforceMinChapterDuration,
   generateChaptersVtt,
   generateChaptersTxt,
   generateChaptersFfmetadata,
   shiftChapters,
   vttTime,
   stampTime,
+  YOUTUBE_MIN_CHAPTER_MS,
   type Chapter,
   type ChapterOptions,
 } from './post/chapters.js';

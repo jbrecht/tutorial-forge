@@ -193,6 +193,65 @@ describe('enforceMinChapterDuration', () => {
     expect(enforceMinChapterDuration(chapters, 0)).toBe(chapters);
     expect(enforceMinChapterDuration(chapters, YOUTUBE_MIN_CHAPTER_MS)).toBe(chapters);
   });
+
+  it('folds a short trailing chapter into a previous chapter that is also short', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 30_000 },
+        { id: 'b', title: 'B', startMs: 30_000, endMs: 33_000 }, // 3s
+        { id: 'c', title: 'C', startMs: 33_000, endMs: 36_000 }, // 3s, last
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    // B folds into A; the still-short tail C then folds into A as well (exercises the i-- re-check).
+    expect(out).toEqual([{ id: 'a', title: 'A', startMs: 0, endMs: 36_000 }]);
+  });
+
+  it('handles the real composed list: short Objectives card + body + short Recap card', () => {
+    const out = enforceMinChapterDuration(
+      [
+        { id: '__intro__', title: 'Objectives', startMs: 0, endMs: 6000 }, // 6s card
+        { id: 'a', title: 'A', startMs: 6000, endMs: 20_000 },
+        { id: 'b', title: 'B', startMs: 20_000, endMs: 40_000 },
+        { id: '__recap__', title: 'Recap', startMs: 40_000, endMs: 44_000 }, // 4s card
+      ],
+      YOUTUBE_MIN_CHAPTER_MS,
+    );
+    // Objectives folds forward into A (start → 0); Recap folds back into B.
+    expect(out).toEqual([
+      { id: 'a', title: 'A', startMs: 0, endMs: 20_000 },
+      { id: 'b', title: 'B', startMs: 20_000, endMs: 44_000 },
+    ]);
+  });
+
+  it('guarantees the floor, contiguity, and a 0 start for arbitrary inputs', () => {
+    const inputs = [
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 4000 },
+        { id: 'b', title: 'B', startMs: 4000, endMs: 9000 },
+        { id: 'c', title: 'C', startMs: 9000, endMs: 11_000 },
+        { id: 'd', title: 'D', startMs: 11_000, endMs: 50_000 },
+      ],
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 12_000 },
+        { id: 'b', title: 'B', startMs: 12_000, endMs: 13_000 },
+        { id: 'c', title: 'C', startMs: 13_000, endMs: 30_000 },
+      ],
+      [
+        { id: 'a', title: 'A', startMs: 0, endMs: 3000 },
+        { id: 'b', title: 'B', startMs: 3000, endMs: 6000 },
+      ],
+    ];
+    for (const input of inputs) {
+      const out = enforceMinChapterDuration(input, YOUTUBE_MIN_CHAPTER_MS);
+      expect(out[0]!.startMs).toBe(0); // playback always opens inside a chapter
+      for (let i = 0; i < out.length; i++) {
+        if (i > 0) expect(out[i]!.startMs).toBe(out[i - 1]!.endMs); // contiguous: no gaps or overlaps
+        // every survivor clears the floor, except when the whole list collapses to one
+        if (out.length > 1) expect(out[i]!.endMs - out[i]!.startMs).toBeGreaterThanOrEqual(YOUTUBE_MIN_CHAPTER_MS);
+      }
+    }
+  });
 });
 
 describe('generateChaptersVtt', () => {
