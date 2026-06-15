@@ -3,7 +3,7 @@
   "version": "0.11.0",
   "description": "CLI for tutorial-forge: render scripted Playwright walkthroughs into narrated tutorial videos",
   "type": "module",
-  "license": "MIT",
+  "license": "PolyForm-Small-Business-1.0.0",
   "author": "John Brecht <john.brecht@gmail.com>",
   "repository": {
     "type": "git",

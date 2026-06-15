@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/tutorial-forge)](https://www.npmjs.com/package/tutorial-forge)
 [![CI](https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/tutorial-forge)](LICENSE)
+[![License: PolyForm Small Business](https://img.shields.io/badge/License-PolyForm%20Small%20Business-blue)](COMMERCIAL.md)
 
 Turn scripted Playwright walkthroughs into finished, narrated tutorial videos (MP4).
 
@@ -93,3 +93,9 @@ pnpm forge render     # → tutorials/dist/getting-started.mp4
 By default the example renders with silent placeholder narration. For real voices, copy `.env.example` to `.env` in `packages/example-app`, set `FORGE_TTS=elevenlabs` (with `ELEVENLABS_API_KEY`) or `FORGE_TTS=openai` (with `OPENAI_API_KEY`), and re-run. The CLI loads `.env` from the directory you run it in; `.env` is gitignored. See [getting started](docs/getting-started.md#tts-providers-and-api-keys) for creating a minimally-scoped ElevenLabs key (only "Text to Speech" access is needed).
 
 Docs: [getting started](docs/getting-started.md) · [writing tutorials](docs/writing-tutorials.md) · [adapters](docs/adapters.md)
+
+## License
+
+Tutorial Forge is licensed under the [PolyForm Small Business License 1.0.0](LICENSE) — a source-available license.
+
+Free for individuals and organizations under **100 people and $1M USD revenue** (including CI/CD and hosted-service use — size is the only gate). Larger organizations require a commercial license; see [COMMERCIAL.md](COMMERCIAL.md).
