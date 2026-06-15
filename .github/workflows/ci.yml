@@ -21,6 +21,10 @@ jobs:
               - '**/*.md'
               - 'LICENSE'
               - 'COMMERCIAL.md'
+              # Agent/config files under the .claude dot-directory don't affect a
+              # render. Listed explicitly because '**/*.md' (picomatch dot:false)
+              # won't descend into dot-directories.
+              - '.claude/**'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
