@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="tutorial-forge" width="140" />
+  <img src="docs/assets/readme-header.png" alt="tutorial-forge — turn scripted Playwright walkthroughs into finished, narrated tutorial videos" width="820" />
 </p>
 
-# tutorial-forge
-
-[![npm](https://img.shields.io/npm/v/tutorial-forge)](https://www.npmjs.com/package/tutorial-forge)
-[![CI](https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml)
-[![License: PolyForm Small Business](https://img.shields.io/badge/License-PolyForm%20Small%20Business-blue)](COMMERCIAL.md)
+<p align="center">
+  <a href="https://www.npmjs.com/package/tutorial-forge"><img src="https://img.shields.io/npm/v/tutorial-forge" alt="npm" /></a>
+  <a href="https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml"><img src="https://github.com/jbrecht/tutorial-forge/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="COMMERCIAL.md"><img src="https://img.shields.io/badge/License-PolyForm%20Small%20Business-blue" alt="License: PolyForm Small Business" /></a>
+</p>
 
 Turn scripted Playwright walkthroughs into finished, narrated tutorial videos (MP4).
 
@@ -38,7 +38,14 @@ $ tutorial-forge render
   subtitles: tutorials/dist/getting-started.srt
 ```
 
-The pipeline handles everything else: TTS narration (ElevenLabs, OpenAI, Piper, or silent), browser driving, screen recording, narration-driven pacing, an animated fake cursor, click-highlight callouts, optional zoom toward click targets (`--zoom`), SRT subtitles, and the final FFmpeg merge.
+## What you get
+
+- **Author tutorials as code** — each tutorial is a TypeScript spec pairing narration with raw Playwright actions. Re-render when the UI changes instead of re-recording; review tutorials in PRs and regenerate them in CI. → [writing tutorials](docs/writing-tutorials.md)
+- **Narration-first pacing** — TTS via ElevenLabs, OpenAI, Piper, or a silent placeholder, content-hash cached so unchanged lines are never re-synthesized. Each step holds on screen as long as its narration; speech drives timing, never the reverse. → [TTS providers](docs/getting-started.md#tts-providers-and-api-keys)
+- **Polished video, composited in post** — an animated fake cursor, click-highlight callouts, optional [zoom toward each click](docs/getting-started.md#render) (`--zoom`), [chapters that work on YouTube & Vimeo](docs/getting-started.md#render), [intro/recap cards](docs/writing-tutorials.md#intro--recap-cards) from your objectives, SRT or burned-in captions, and [GIF export](docs/getting-started.md#render) for READMEs.
+- **Built for real workflows** — [localized renders](docs/writing-tutorials.md#localization) from translation sidecars (`--lang`), [idle speed-up](docs/getting-started.md#render) for slow waits, a [contact sheet](docs/getting-started.md#render) to confirm every step framed the right thing, a [`doctor`](docs/getting-started.md#install) preflight, and two recorders (`video` / `screencast`).
+
+The pipeline ties it together: TTS → browser driving + screen recording → a single FFmpeg pass that lays narration, trims, and transcodes.
 
 **Localization built in:** drop a `getting-started.tutorial.es.json` translation file next to the tutorial and run `tutorial-forge render --lang es` — same walkthrough, Spanish narration and subtitles, pacing re-derived from the actual Spanish speech. Every language your docs need, regenerated on every release. See [writing tutorials](docs/writing-tutorials.md#localization).
 
