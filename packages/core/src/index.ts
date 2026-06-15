@@ -19,7 +19,7 @@ export { localizeTutorial, availableLanguages, OBJECTIVES_KEY, SUMMARY_KEY } fro
 export { defineConfig, validateConfig, type ForgeConfig } from './config.js';
 
 export { render, type RenderResult } from './pipeline/render.js';
-export { runTTSPhase, loadTTSResult } from './pipeline/tts.js';
+export { runTTSPhase, loadTTSResult, loadTTSResultIfPresent, silentTTSResult } from './pipeline/tts.js';
 export { runRecordPhase, loadManifest, RAW_VIDEO_FILE, MANIFEST_FILE } from './pipeline/record.js';
 export {
   createRecorder,

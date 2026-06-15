@@ -190,6 +190,8 @@ tutorial-forge preview set-status --only my-tutorial
 
 **`tutorial-forge render --contact-sheet`** keeps a settled screenshot per step and emits a labeled grid PNG next to the video (`<name>-contact-sheet.png`), one thumbnail per step tagged with its id and narration. Scan it to confirm every step framed the right thing at a glance, instead of scrubbing the video. Enable it persistently with `contactSheet: true` in `forge.config.ts`. If a step fails mid-render, you still get a **partial** sheet of the steps that completed plus the failure frame as the last cell — the at-a-glance view of how the run got to the failure.
 
+Pair it with `--phase record` for a **TTS-free** whole-tutorial check: `tutorial-forge render --only <id> --phase record --contact-sheet` drives the browser through every step and emits the sheet without synthesizing any narration (steps pace as silent when no TTS has run), so you can validate selectors and framing across the whole tutorial before spending on a real voice. `preview <step>` is the faster single-step loop; the contact sheet is the whole-tutorial version.
+
 ## Timing manifest
 
 Every render writes `manifest.json` describing the full timeline (per-step start/end, action windows, audio durations, callout boxes). It is the contract between the record and post phases and a debugging gold mine — run with `--keep-work` to keep it on success.

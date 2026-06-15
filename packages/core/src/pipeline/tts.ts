@@ -46,13 +46,43 @@ export async function runTTSPhase<S = unknown>(
   return result;
 }
 
-/** Load a previous run's tts.json (for `--phase record`/`--phase post`). */
-export async function loadTTSResult(workDir: string): Promise<TTSPhaseResult> {
+/**
+ * Load a previous run's tts.json, or `null` if it doesn't exist yet. A corrupt
+ * or unreadable file still throws — only a *missing* file is a clean null, which
+ * lets `--phase record` fall back to placeholder timings (see {@link silentTTSResult}).
+ */
+export async function loadTTSResultIfPresent(workDir: string): Promise<TTSPhaseResult | null> {
   try {
     return JSON.parse(await readFile(join(workDir, TTS_RESULT_FILE), 'utf8')) as TTSPhaseResult;
   } catch (err) {
-    throw new Error(
-      `No ${TTS_RESULT_FILE} in ${workDir} — run the tts phase first (cause: ${err instanceof Error ? err.message : err})`,
-    );
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
   }
+}
+
+/** Load a previous run's tts.json (for `--phase post`); throws if it's absent. */
+export async function loadTTSResult(workDir: string): Promise<TTSPhaseResult> {
+  const result = await loadTTSResultIfPresent(workDir);
+  if (!result) {
+    throw new Error(`No ${TTS_RESULT_FILE} in ${workDir} — run the tts phase first`);
+  }
+  return result;
+}
+
+/**
+ * Per-step placeholder timings with no audio (null file, 0 ms) — the same shape
+ * {@link runTTSPhase} emits for silent steps, applied to every step. Lets
+ * `--phase record` run a TTS-free framing check (e.g. `--contact-sheet`) without
+ * a prior tts phase: steps are paced as silent, so the record reaches each
+ * step's state without synthesizing any narration (#50).
+ */
+export function silentTTSResult<S = unknown>(tutorial: Tutorial<S>): TTSPhaseResult {
+  return {
+    steps: tutorial.steps.map((step, i) => ({
+      id: stepId(step, i),
+      narration: step.narration,
+      audioFile: null,
+      audioDurationMs: 0,
+    })),
+  };
 }
