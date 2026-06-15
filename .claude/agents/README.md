@@ -1,11 +1,11 @@
 # tutorial-forge agents
 
-Six project subagents for tutorial-forge — the TypeScript ESM monorepo (pnpm) that
+Seven project subagents for tutorial-forge — the TypeScript ESM monorepo (pnpm) that
 renders narrated tutorial videos by driving an app with Playwright and stitching the
 result with ffmpeg. Two **generative** roles decide what to build — one for product
-priority, one for pedagogical direction; four **reactive** reviewers critique work along
-different axes — *is it correct*, *is it well-tested*, *does it watch well*, *is it safe to
-ship*. Reach for them at these moments:
+priority, one for pedagogical direction; five **reactive** reviewers critique work along
+different axes — *is it correct*, *is it well-tested*, *does it watch well*, *is it fast*,
+*is it safe to ship*. Reach for them at these moments:
 
 ## Generative (decide what to build)
 
@@ -21,11 +21,12 @@ ship*. Reach for them at these moments:
 | **code-reviewer** | after implementing a feature/fix, before John commits. | severity-ranked findings on the uncommitted diff — timing math, the calibration-flash/sync path, ffmpeg arg/filter builders, async/process cleanup, public-API/semver, ESM hygiene. Read-only. |
 | **qa-engineer** | after a feature lands, or to audit a feature area's coverage. | a prioritized test-gap report across the render pipeline's author journeys (timing regimes, filtergraph composition, i18n, TTS, recording, GIF windowing); picks vitest vs. e2e per gap. Writes tests when asked. |
 | **designer** | after changing anything that affects how a render looks or reads, or to audit how a tutorial watches to a human. | critique of the **output experience** — video pacing, callout/cursor/zoom placement, caption legibility + the `.srt`, GIF exports, and CLI ergonomics (`doctor`, progress, `StepError`). Watches a real render; doesn't read just the code. |
+| **performance-engineer** | auditing render speed / resource use, before a large batch regeneration (e.g. umami's set), or when a render feels slow. | a prioritized, **measured** optimization report — a per-phase time/CPU/memory budget (cold vs warm cache, single vs batch), findings ranked by quantified saving × confidence, separating safe wins from output trade-offs. Advisory; measures and recommends, doesn't change behavior or file issues. |
 | **release-reviewer** | before `pnpm publish` of a new version. | release-hygiene findings — version-bump consistency across the three places, semver of the public surface, the packed tarball surface, no leaked secrets/stray files, CHANGELOG + docs. Read-only. **This replaces a security-reviewer role** — TF has no server/auth/payment surface; its risk is shipping a broken or leaky npm package. |
 
 ## How they divide the work
 
-The four reviewers are deliberately **different axes on the same render**, not redundant:
+The five reviewers are deliberately **different axes on the same render**, not redundant:
 
 - **code-reviewer** asks *is it correct* — does the timing math, the flash/sync path, and
   the filtergraph wiring do the right thing, and is the public API change semver-honest.
@@ -36,6 +37,10 @@ The four reviewers are deliberately **different axes on the same render**, not r
 - **designer** asks *does it watch well* — correctness the others prove (drift, cue count,
   flash) is necessary but not sufficient; the designer judges pacing, attention-direction,
   and legibility that no assertion captures.
+- **performance-engineer** asks *is it fast* — same output, fewer seconds and cycles:
+  where wall-clock actually goes (TTS / record / post), encode + filtergraph efficiency,
+  cache hit-rate, and parallelism across a batch. It measures first and never trades
+  correctness, A/V sync, or watchability for speed.
 - **release-reviewer** asks *is it safe to ship* — independent of whether the feature is
   good, will the published `tutorial-forge` / `tutorial-forge-cli` packages be correctly
   versioned, completely packed, and leak-free.
@@ -46,6 +51,12 @@ The four reviewers are deliberately **different axes on the same render**, not r
   because a cue is mis-computed, a callout firing on the wrong step) and hands those to the
   **code-reviewer** / **qa-engineer** rather than treating them as taste. The reverse also
   holds: a correct-but-unwatchable render is the designer's call, not the code-reviewer's.
+- The **performance-engineer** and **code-reviewer** share the ffmpeg arg/filter builders:
+  the code-reviewer asks *is it correct*, the performance-engineer asks *is it as fast as it
+  can be without changing a byte of output*. A speedup that risks sync or correctness goes
+  back to the **code-reviewer**; one that would change what the viewer sees or hears is a
+  **designer** watchability call or a **product-manager** trade-off — never an optimization
+  the performance-engineer applies on its own.
 - The **instructional-designer** and the **designer** share a seam on the attention
   features (callouts/cursor/zoom, pacing, captions): the designer asks *is it crafted well*
   (jarring zoom, unreadable caption), the instructional-designer asks *does the learner
