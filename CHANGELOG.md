@@ -18,6 +18,10 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## Unreleased
+
+- **Broader recap-framing lint (#49).** The strict-mode lint that nudges the last step to close with a recap (#36) no longer false-warns on valid past-tense / accomplishment recaps (e.g. "you created an event, set up ticketing… from here you can…"). `RECAP_CUE_RE` now also matches accomplishment phrasing and the "from here you…" hand-off, bringing it to parity with the looser objective cue. Advisory-only — it never fails a render.
+
 ## 0.12.0 — chapters that work on YouTube & Vimeo
 
 - **Chapters now activate on YouTube & Vimeo (#52).** The emitted chapter artifacts respect each platform's activation rules so they don't silently fail on upload. The YouTube `.chapters.txt` list folds any sub-10s chapter into its neighbor — YouTube ignores the *entire* description chapter list if a single chapter is under 10s. Chapter titles are now capped at **50 characters** (Vimeo's limit, the strictest common target) instead of 60 — a behavior change to the default title cap (`ChapterOptions.maxTitleChars` / `deriveChapterTitle`), so titles of 51–60 chars that previously survived are now truncated. The MP4 chapter track and the `.chapters.vtt` (Vimeo/web) keep the full per-step list. New exports: `enforceMinChapterDuration`, `YOUTUBE_MIN_CHAPTER_MS`. Docs gained a "Getting chapters onto YouTube and Vimeo" section. No breaking signature changes.
