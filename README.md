@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.png" alt="tutorial-forge" width="140" />
+</p>
+
 # tutorial-forge
 
 [![npm](https://img.shields.io/npm/v/tutorial-forge)](https://www.npmjs.com/package/tutorial-forge)
