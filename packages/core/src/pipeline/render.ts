@@ -3,7 +3,7 @@ import type { RenderOptions, TimingManifest, Tutorial, TutorialAdapter } from '.
 import { StepError } from '../types.js';
 import { validateTutorial } from '../spec.js';
 import { localizeTutorial } from '../i18n.js';
-import { runTTSPhase, loadTTSResult } from './tts.js';
+import { runTTSPhase, loadTTSResult, loadTTSResultIfPresent, silentTTSResult } from './tts.js';
 import { runRecordPhase, loadManifest } from './record.js';
 import { runPostPhase, type PostPhaseResult } from './post.js';
 import { renderContactSheet, contactSheetEntries, contactSheetPath } from './contact-sheet.js';
@@ -53,7 +53,13 @@ export async function render<S = unknown>(
             cacheDir: options.ttsCacheDir ?? defaultCacheDir(),
             concurrency: options.ttsConcurrency ?? 4,
           })
-        : await loadTTSResult(workDir);
+        : phase === 'record'
+          ? // A standalone `--phase record` (the TTS-free framing check) falls back
+            // to placeholder timings when no tts.json exists yet — paces steps as
+            // silent rather than throwing (#50). `--phase post` still needs real
+            // timings, so it stays strict below.
+            ((await loadTTSResultIfPresent(workDir)) ?? silentTTSResult(tutorial))
+          : await loadTTSResult(workDir);
     if (phase === 'tts') {
       return partialResult(workDir, output, await safeLoadManifest(workDir, tutorial.id));
     }

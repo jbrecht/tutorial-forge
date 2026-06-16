@@ -136,6 +136,30 @@ try {
 
   console.log(`\ne2e OK: ${output} (${(actualMs / 1000).toFixed(1)}s, offset ${result.videoClockOffsetMs}ms, ${narratedSteps} cues)`);
 
+  // #50 — `render --phase record` is the TTS-free framing check. On a *fresh*
+  // work dir (no prior tts.json) it must fall back to silent placeholder timings
+  // and still emit a contact sheet, instead of throwing "run the tts phase first".
+  {
+    const recordOnlyDir = join(outDir, 'work-record-only');
+    const recordOnly = await render(gettingStarted, adapter, {
+      tts: SilentProvider(),
+      output: join(outDir, 'record-only.mp4'),
+      workDir: recordOnlyDir,
+      keepWorkDir: true,
+      phase: 'record',
+      contactSheet: true,
+    });
+    assert.ok(
+      recordOnly.contactSheetPath && existsSync(recordOnly.contactSheetPath),
+      'phase=record produced a contact sheet with no prior tts phase',
+    );
+    assert.ok(
+      !existsSync(join(recordOnlyDir, 'tts.json')),
+      'record-only phase synthesized no TTS (no tts.json written)',
+    );
+    console.log('e2e OK [phase-record-no-tts]: TTS-free contact sheet on a fresh work dir (#50)');
+  }
+
   // Localized render: load the Spanish sidecar the way the CLI would and
   // verify the pipeline produces a Spanish video + subtitles.
   gettingStarted.translations = {
