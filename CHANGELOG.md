@@ -20,6 +20,7 @@ Everything below is opt-in. Notes for existing consumers:
 
 ## Unreleased
 
+- **`render --phase record` runs without a prior `tts` phase (#50).** The TTS-free framing check — `--phase record --contact-sheet`, used to verify selectors and framing across a whole tutorial before paying for narration — no longer throws `run the tts phase first` on a fresh work dir. When `tts.json` is absent it falls back to silent placeholder timings (steps pace as silent), so you get a contact sheet at zero TTS cost. `--phase post` still requires real timings. New exports: `silentTTSResult`, `loadTTSResultIfPresent`.
 - **Broader recap-framing lint (#49).** The strict-mode lint that nudges the last step to close with a recap (#36) no longer false-warns on valid past-tense / accomplishment recaps (e.g. "you created an event, set up ticketing… from here you can…"). `RECAP_CUE_RE` now also matches accomplishment phrasing and the "from here you…" hand-off, bringing it to parity with the looser objective cue. Advisory-only — it never fails a render.
 
 ## 0.12.0 — chapters that work on YouTube & Vimeo
