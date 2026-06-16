@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { copyFile, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import type { TTSProvider } from '../types.js';
 import { sha256 } from '../util/hash.js';
 import { ensureDir, exists } from '../util/fs.js';
@@ -30,8 +31,14 @@ export async function synthesizeCached(
   const cached = join(cacheDir, `${cacheKeyFor(provider, text)}.wav`);
   if (!(await exists(cached))) {
     await ensureDir(cacheDir);
-    const raw = cached + '.raw.tmp';
-    const normalized = cached + '.tmp';
+    // Per-call unique temp paths: two renders synthesizing the SAME cache key
+    // concurrently (same provider + text — the same-language batch-regen case)
+    // must not share a temp file, or they'd clobber each other mid-write and one
+    // job's cleanup would delete the other's in-flight file. The final `rename`
+    // into `cached` is atomic regardless of which job wins.
+    const token = `${process.pid}.${randomUUID()}`;
+    const raw = `${cached}.${token}.raw.tmp`;
+    const normalized = `${cached}.${token}.tmp`;
     try {
       await provider.synthesize(text, raw);
       await normalizeToWav(raw, normalized);

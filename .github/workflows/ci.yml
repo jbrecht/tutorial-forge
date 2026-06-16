@@ -36,7 +36,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
-      - run: pnpm --filter tutorial-forge test
+      # Unit tests across all packages (core + cli vitest; example-app is e2e-only).
+      - run: pnpm -r test
       - name: Install Playwright Chromium
         if: steps.changes.outputs.docs_only != 'true'
         run: pnpm --filter tutorial-forge-example-app exec playwright install --with-deps chromium

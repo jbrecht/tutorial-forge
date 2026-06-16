@@ -94,3 +94,4 @@ export {
   type SpeedSegment,
   type TimeMap,
 } from './post/retime.js';
+export { mapLimit } from './util/fs.js';

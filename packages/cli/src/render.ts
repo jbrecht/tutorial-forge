@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { render, type ForgeConfig } from 'tutorial-forge';
+import { render, mapLimit, type ForgeConfig } from 'tutorial-forge';
 import { loadConfig, discoverTutorials } from './load.js';
 
 export interface RenderCmdOptions {
@@ -9,6 +9,8 @@ export interface RenderCmdOptions {
   keepWork?: boolean;
   outDir?: string;
   concurrency?: string;
+  /** How many tutorial×language renders to run in parallel (default 1). */
+  renderConcurrency?: string;
   config?: string;
   /** Comma-separated language list, e.g. "es,fr". Overrides config.languages. */
   lang?: string;
@@ -50,6 +52,34 @@ function resolveRecorder(value: string | undefined): 'video' | 'screencast' | un
   return value;
 }
 
+/**
+ * How many renders to run in parallel: the `--render-concurrency` flag wins over
+ * `config.renderConcurrency`, default 1 (serial). A non-positive or non-numeric
+ * value clamps to 1, so the worst case is today's safe serial behavior.
+ */
+export function resolveRenderConcurrency(
+  flag: string | undefined,
+  configValue: number | undefined,
+): number {
+  const raw = flag !== undefined ? parseInt(flag, 10) : configValue;
+  return Number.isFinite(raw) && (raw as number) >= 1 ? Math.floor(raw as number) : 1;
+}
+
+/**
+ * Flatten discovered tutorials × languages into a flat render-job list, in
+ * tutorial-major order. Languages are de-duplicated first: two jobs with the
+ * same `(id, lang)` would target the same `.forge/<id><suffix>` work dir and
+ * `<id><suffix>.mp4` output, which under `--render-concurrency > 1` means two
+ * renders writing the same paths at once (e.g. `--lang "es,es"`).
+ */
+export function buildRenderJobs<T>(
+  discovered: Array<{ tutorial: T }>,
+  langs: Array<string | null>,
+): Array<{ tutorial: T; lang: string | null }> {
+  const uniqueLangs = [...new Set(langs)];
+  return discovered.flatMap(({ tutorial }) => uniqueLangs.map((lang) => ({ tutorial, lang })));
+}
+
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
   const cwd = process.cwd();
   const config: ForgeConfig = await loadConfig(cwd, opts.config);
@@ -70,49 +100,55 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
   const langs: Array<string | null> =
     opts.lang?.split(',').map((l) => l.trim()).filter(Boolean) ?? config.languages ?? [null];
 
-  for (const { tutorial } of discovered) {
-    for (const lang of langs) {
-      const suffix = lang ? `.${lang}` : '';
-      const label = lang ? ` [${lang}]` : '';
-      console.log(`\n▶ ${tutorial.id}${label} — ${tutorial.title} (${tutorial.steps.length} steps)`);
-      const result = await render(tutorial, config.adapter, {
-        tts: (lang && config.ttsByLang?.[lang]) || config.tts,
-        output: join(outDir, `${tutorial.id}${suffix}.mp4`),
-        workDir: join(cwd, '.forge', `${tutorial.id}${suffix}`),
-        viewport: config.viewport,
-        headless: opts.headed ? false : config.headless ?? true,
-        cursor: config.cursor,
-        callouts: config.callouts,
-        subtitles: config.subtitles,
-        captionStyle: config.captionStyle,
-        leadInMs: config.leadInMs,
-        keepWorkDir: opts.keepWork ?? config.keepWorkDir,
-        ttsCacheDir: config.ttsCacheDir,
-        ttsConcurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : config.ttsConcurrency,
-        phase: opts.phase,
-        lang: lang ?? undefined,
-        defaultLang,
-        zoom: opts.zoom ?? config.zoom,
-        idleSpeedup: opts.idleSpeedup ?? config.idleSpeedup,
-        gif: resolveGifOption(opts, config.gif),
-        recorder: resolveRecorder(opts.recorder) ?? config.recorder,
-        debug: opts.debug,
-        contactSheet: opts.contactSheet ?? config.contactSheet,
-        // --no-chapters forces off; otherwise fall back to config (post defaults on).
-        chapters: opts.chapters === false ? false : config.chapters,
-        // --no-cards forces off; otherwise fall back to config (post defaults on).
-        cards: opts.cards === false ? false : config.cards,
-      });
-      if (opts.phase === 'all' || opts.phase === 'post') {
-        console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
-        if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
-        if (result.chaptersVttPath) console.log(`  chapters:  ${result.chaptersVttPath}`);
-        if (result.gifPath) console.log(`  gif:       ${result.gifPath}`);
-        if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
-      } else {
-        console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
-        if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
-      }
-    }
+  // Flatten tutorial × language into a job list so it can run with bounded
+  // concurrency. Default 1 = today's serial, fail-fast behavior unchanged.
+  const jobs = buildRenderJobs(discovered, langs);
+  const renderConcurrency = resolveRenderConcurrency(opts.renderConcurrency, config.renderConcurrency);
+  if (renderConcurrency > 1) {
+    console.log(`rendering ${jobs.length} job(s) at concurrency ${renderConcurrency}`);
   }
+
+  await mapLimit(jobs, renderConcurrency, async ({ tutorial, lang }) => {
+    const suffix = lang ? `.${lang}` : '';
+    const label = lang ? ` [${lang}]` : '';
+    console.log(`\n▶ ${tutorial.id}${label} — ${tutorial.title} (${tutorial.steps.length} steps)`);
+    const result = await render(tutorial, config.adapter, {
+      tts: (lang && config.ttsByLang?.[lang]) || config.tts,
+      output: join(outDir, `${tutorial.id}${suffix}.mp4`),
+      workDir: join(cwd, '.forge', `${tutorial.id}${suffix}`),
+      viewport: config.viewport,
+      headless: opts.headed ? false : config.headless ?? true,
+      cursor: config.cursor,
+      callouts: config.callouts,
+      subtitles: config.subtitles,
+      captionStyle: config.captionStyle,
+      leadInMs: config.leadInMs,
+      keepWorkDir: opts.keepWork ?? config.keepWorkDir,
+      ttsCacheDir: config.ttsCacheDir,
+      ttsConcurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : config.ttsConcurrency,
+      phase: opts.phase,
+      lang: lang ?? undefined,
+      defaultLang,
+      zoom: opts.zoom ?? config.zoom,
+      idleSpeedup: opts.idleSpeedup ?? config.idleSpeedup,
+      gif: resolveGifOption(opts, config.gif),
+      recorder: resolveRecorder(opts.recorder) ?? config.recorder,
+      debug: opts.debug,
+      contactSheet: opts.contactSheet ?? config.contactSheet,
+      // --no-chapters forces off; otherwise fall back to config (post defaults on).
+      chapters: opts.chapters === false ? false : config.chapters,
+      // --no-cards forces off; otherwise fall back to config (post defaults on).
+      cards: opts.cards === false ? false : config.cards,
+    });
+    if (opts.phase === 'all' || opts.phase === 'post') {
+      console.log(`✓ ${result.output} (${(result.outputDurationMs / 1000).toFixed(1)}s)`);
+      if (result.srtPath) console.log(`  subtitles: ${result.srtPath}`);
+      if (result.chaptersVttPath) console.log(`  chapters:  ${result.chaptersVttPath}`);
+      if (result.gifPath) console.log(`  gif:       ${result.gifPath}`);
+      if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
+    } else {
+      console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
+      if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
+    }
+  });
 }

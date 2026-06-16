@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'no unit tests in cli'",
+    "test": "vitest run",
     "prepublishOnly": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -38,7 +38,8 @@
     "tutorial-forge": "workspace:*"
   },
   "devDependencies": {
-    "playwright": "^1.59.0"
+    "playwright": "^1.59.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=20"

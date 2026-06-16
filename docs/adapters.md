@@ -121,3 +121,17 @@ Thunks run in reverse registration order, so the last thing created is the first
 - **Keep secrets in env vars.** The adapter is plain code in your repo; read credentials from the environment, as in any e2e test.
 - **Teardown failures are non-fatal, and must tolerate partial setup.** They log a warning and the render still succeeds — teardown runs after the manifest is final, and also after a *failed* setup, so null-check what you delete.
 - **Verify setup before a full render.** `tutorial-forge doctor` checks the app is reachable; add `--setup` to actually run `adapter.setup` once and tear it down. It catches the "reachable but pointed at the wrong database" case — a green reachability check followed by a guaranteed sign-in failure — before you wait out a whole render.
+
+## Parallel rendering
+
+By default the CLI renders one tutorial × language at a time. Because the record phase mostly *waits* (each step holds in real time for its narration), the machine is near-idle during it — so rendering a **set** of tutorials is much faster in parallel. Opt in with `--render-concurrency <n>` (or `renderConcurrency` in `forge.config.ts`); the default is `1` (serial).
+
+Concurrency > 1 only works if **your adapter is parallel-safe**, because each concurrent render runs its own `setup`/`teardown` against your app at the same time. The contract:
+
+- **Isolate seed data per render.** Concurrent `setup` calls must not collide on shared state. Give each render its own namespace — a per-worker database/schema, a unique tenant or account, or seed records keyed so they can't clash — rather than seeding into one shared space. If two renders seed and tear down the same rows, they'll corrupt each other.
+- **Don't assume a single live browser/page.** Each render drives its own browser; adapters that reach for a module-global page or client will break. Use `ctx.state` (see above) for per-render handoff, never a shared singleton.
+- **Make teardown idempotent and scoped.** It already must tolerate partial setup; under concurrency it must also only remove *its own* render's data.
+
+If you're not sure your adapter meets this, leave concurrency at `1` — it's the safe default. (TTS synthesis is already safely parallelized within a render via `ttsConcurrency`, independent of this.)
+
+If one render fails, the command stops *scheduling* new ones and exits non-zero, but renders already in flight run to completion first (their logs may interleave after the error) — so a failed batch can still leave a few finished videos behind.
