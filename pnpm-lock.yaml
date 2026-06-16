@@ -64,9 +64,6 @@ importers:
       tutorial-forge:
         specifier: workspace:*
         version: link:../core
-      tutorial-forge-cli:
-        specifier: workspace:*
-        version: link:../cli
     devDependencies:
       '@types/express':
         specifier: ^4.17.21
