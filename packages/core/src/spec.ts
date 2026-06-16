@@ -17,7 +17,13 @@ const INSTRUMENTED_ACTION_RE = /\.(click|dblclick|hover|fill|check|uncheck|selec
 // Loose cues that a line opens with an objective / closes with a recap. Used
 // only for the heuristic strict-mode framing lints, so false matches are cheap.
 const INTRO_CUE_RE = /\b(in this|we['’]ll|we will|you['’]ll|you will|let['’]s|let us|this (?:tour|guide|tutorial|walkthrough|video)|by the end)\b/i;
-const RECAP_CUE_RE = /\b(that['’]s all|that is all|you['’]re (?:ready|done|all set)|you are (?:ready|done|all set)|in summary|to recap|to sum up|now you (?:can|know)|you['’]ve (?:now|just)|you have (?:now|just))\b/i;
+// Kept comparably forgiving to INTRO_CUE_RE so the objective/recap framing lints
+// nag symmetrically (#49): besides the explicit "to recap" cues, also accept
+// past-tense accomplishment phrasing ("you created/set up/added …") and the
+// "from here you …" hand-off connector, which read as recaps but matched none
+// of the fixed cues before.
+const RECAP_CUE_RE =
+  /\b(that['’]s all|that is all|you['’]re (?:ready|done|all set)|you are (?:ready|done|all set)|in summary|to recap|to sum up|now you (?:can|know)|you['’]ve (?:now|just)|you have (?:now|just)|from here[,]? you|you (?:['’]ve |have )?(?:created|added|built|set up|set|configured|enabled|published|connected|installed|learned|completed|finished|made|brought|customized|deployed|removed|updated|changed|wired up|saw|seen))\b/i;
 
 export function step<S = unknown>(narration: string, run: Step<S>['run'], opts?: Partial<Step<S>>): Step<S> {
   return { narration, run, ...opts };

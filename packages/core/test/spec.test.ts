@@ -205,6 +205,21 @@ describe('narration lints', () => {
       const msgs = warn.mock.calls.map((c) => c[0] as string).join('\n');
       expect(msgs).not.toMatch(/objective|recap/);
     });
+
+    it('accepts a past-tense accomplishment recap without an explicit cue (#49)', () => {
+      const warn = warns();
+      tutorial('x', [
+        step("In this guide we'll set up an event.", noop),
+        // Real umami recap that slipped through the old fixed cue set.
+        step(
+          'That is the core loop. You created an event, set up ticketing, and added a banner. ' +
+            'From here you can invite attendees and send broadcasts.',
+          noop,
+        ),
+      ], { lint: { strict: true } });
+      const msgs = warn.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(msgs).not.toMatch(/recap/);
+    });
   });
 });
 
