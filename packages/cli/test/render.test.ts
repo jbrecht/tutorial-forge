@@ -51,4 +51,17 @@ describe('buildRenderJobs (#62)', () => {
   it('produces exactly one job for a single tutorial rendered in the source language', () => {
     expect(buildRenderJobs([{ tutorial: { id: 'a' } }], [null])).toHaveLength(1);
   });
+
+  it('throws on a cross-tutorial id+suffix collision instead of letting jobs share a path (#65)', () => {
+    // `setup` rendered in `es` → "setup.es"; `setup.es` rendered source → also "setup.es".
+    expect(() =>
+      buildRenderJobs([{ tutorial: { id: 'setup' } }, { tutorial: { id: 'setup.es' } }], [null, 'es']),
+    ).toThrow(/collision.*setup\.es/i);
+  });
+
+  it('does not flag legitimately distinct id+suffix combinations', () => {
+    expect(() =>
+      buildRenderJobs([{ tutorial: { id: 'setup' } }, { tutorial: { id: 'teardown' } }], ['es', 'fr']),
+    ).not.toThrow();
+  });
 });

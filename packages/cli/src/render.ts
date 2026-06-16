@@ -65,19 +65,47 @@ export function resolveRenderConcurrency(
   return Number.isFinite(raw) && (raw as number) >= 1 ? Math.floor(raw as number) : 1;
 }
 
+/** Work dir / output key for a job: `<id>` or `<id>.<lang>`. Two jobs that share it write the same paths. */
+function jobPathKey(id: string, lang: string | null): string {
+  return lang ? `${id}.${lang}` : id;
+}
+
 /**
  * Flatten discovered tutorials × languages into a flat render-job list, in
  * tutorial-major order. Languages are de-duplicated first: two jobs with the
  * same `(id, lang)` would target the same `.forge/<id><suffix>` work dir and
  * `<id><suffix>.mp4` output, which under `--render-concurrency > 1` means two
  * renders writing the same paths at once (e.g. `--lang "es,es"`).
+ *
+ * Throws on the rarer cross-tutorial collision (#65): distinct ids whose
+ * id+language suffixes coincide (e.g. a tutorial named `setup.es` and a tutorial
+ * `setup` rendered in `es` both resolve to `setup.es`). Serially that was a
+ * benign sequential overwrite; under concurrency it's simultaneous corruption,
+ * so fail loudly with a clear message instead.
  */
-export function buildRenderJobs<T>(
+export function buildRenderJobs<T extends { id: string }>(
   discovered: Array<{ tutorial: T }>,
   langs: Array<string | null>,
 ): Array<{ tutorial: T; lang: string | null }> {
   const uniqueLangs = [...new Set(langs)];
-  return discovered.flatMap(({ tutorial }) => uniqueLangs.map((lang) => ({ tutorial, lang })));
+  const jobs = discovered.flatMap(({ tutorial }) => uniqueLangs.map((lang) => ({ tutorial, lang })));
+
+  const byKey = new Map<string, { tutorial: T; lang: string | null }>();
+  for (const job of jobs) {
+    const key = jobPathKey(job.tutorial.id, job.lang);
+    const prior = byKey.get(key);
+    if (prior) {
+      const desc = (j: { tutorial: T; lang: string | null }) =>
+        `"${j.tutorial.id}" (${j.lang ? `lang ${j.lang}` : 'source language'})`;
+      throw new Error(
+        `Render job collision: ${desc(prior)} and ${desc(job)} both resolve to "${key}" — ` +
+          `same work dir (.forge/${key}) and output (${key}.mp4). Rename one tutorial so its ` +
+          `id and language suffix don't coincide with another's.`,
+      );
+    }
+    byKey.set(key, job);
+  }
+  return jobs;
 }
 
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
