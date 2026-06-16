@@ -40,6 +40,7 @@ program
   .option('--keep-work', 'keep the work directory on success')
   .option('--out-dir <dir>', 'output directory (overrides config)')
   .option('--concurrency <n>', 'TTS synthesis concurrency')
+  .option('--render-concurrency <n>', 'render N tutorials in parallel (default 1; only with parallel-safe adapters)')
   .option('--config <path>', 'path to forge.config.ts')
   .option('--lang <langs>', 'render these languages (comma-separated, e.g. "es,fr"); overrides config.languages')
   .option('--zoom', 'zoom toward click targets (overrides config.zoom)')

@@ -18,6 +18,14 @@ export interface ForgeConfig {
   keepWorkDir?: boolean;
   ttsCacheDir?: string;
   ttsConcurrency?: number;
+  /**
+   * How many tutorial×language renders to run in parallel. Default 1 (serial).
+   * Only raise this if your adapter is parallel-safe — concurrent renders each
+   * run their own `setup`/`teardown` against your app, so a shared seed DB must
+   * isolate per render (e.g. unique seed data, or a per-worker namespace) or
+   * they'll collide. See docs/adapters.md.
+   */
+  renderConcurrency?: number;
   /** Languages rendered by default (overridable with --lang). Omit for source-language only. */
   languages?: string[];
   /** The language tutorial narration is written in. Default 'en'. */
@@ -63,6 +71,7 @@ const configSchema = z.object({
   keepWorkDir: z.boolean().optional(),
   ttsCacheDir: z.string().optional(),
   ttsConcurrency: z.number().int().positive().optional(),
+  renderConcurrency: z.number().int().positive().optional(),
   languages: z.array(z.string().min(2)).optional(),
   defaultLang: z.string().min(2).optional(),
   ttsByLang: z
