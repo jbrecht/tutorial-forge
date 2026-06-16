@@ -65,6 +65,21 @@ export function resolveRenderConcurrency(
   return Number.isFinite(raw) && (raw as number) >= 1 ? Math.floor(raw as number) : 1;
 }
 
+/**
+ * Flatten discovered tutorials × languages into a flat render-job list, in
+ * tutorial-major order. Languages are de-duplicated first: two jobs with the
+ * same `(id, lang)` would target the same `.forge/<id><suffix>` work dir and
+ * `<id><suffix>.mp4` output, which under `--render-concurrency > 1` means two
+ * renders writing the same paths at once (e.g. `--lang "es,es"`).
+ */
+export function buildRenderJobs<T>(
+  discovered: Array<{ tutorial: T }>,
+  langs: Array<string | null>,
+): Array<{ tutorial: T; lang: string | null }> {
+  const uniqueLangs = [...new Set(langs)];
+  return discovered.flatMap(({ tutorial }) => uniqueLangs.map((lang) => ({ tutorial, lang })));
+}
+
 export async function renderCommand(globs: string[], opts: RenderCmdOptions): Promise<void> {
   const cwd = process.cwd();
   const config: ForgeConfig = await loadConfig(cwd, opts.config);
@@ -87,7 +102,7 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
 
   // Flatten tutorial × language into a job list so it can run with bounded
   // concurrency. Default 1 = today's serial, fail-fast behavior unchanged.
-  const jobs = discovered.flatMap(({ tutorial }) => langs.map((lang) => ({ tutorial, lang })));
+  const jobs = buildRenderJobs(discovered, langs);
   const renderConcurrency = resolveRenderConcurrency(opts.renderConcurrency, config.renderConcurrency);
   if (renderConcurrency > 1) {
     console.log(`rendering ${jobs.length} job(s) at concurrency ${renderConcurrency}`);

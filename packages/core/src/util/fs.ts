@@ -25,12 +25,24 @@ export async function mapLimit<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
+  // On the first error: stop *scheduling* new items, let the items already in
+  // flight settle, then reject with the first error. We don't reject via
+  // Promise.all (which would return before the in-flight items finish, leaving
+  // them running orphaned past the call) — workers swallow into `firstError` and
+  // we rethrow only once every worker has drained. A failure thus never kicks
+  // off the rest of the queue, and never outlives the call.
+  let firstError: unknown;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (next < items.length) {
+    while (next < items.length && firstError === undefined) {
       const i = next++;
-      results[i] = await fn(items[i] as T, i);
+      try {
+        results[i] = await fn(items[i] as T, i);
+      } catch (err) {
+        if (firstError === undefined) firstError = err;
+      }
     }
   });
   await Promise.all(workers);
+  if (firstError !== undefined) throw firstError;
   return results;
 }

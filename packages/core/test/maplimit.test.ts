@@ -54,6 +54,23 @@ describe('mapLimit', () => {
     ).rejects.toThrow('kaboom');
   });
 
+  it('on a throw, stops scheduling new items but lets in-flight ones finish (concurrency > 1)', async () => {
+    const started: number[] = [];
+    const finished: number[] = [];
+    await expect(
+      mapLimit([0, 1, 2, 3, 4], 2, async (n) => {
+        started.push(n);
+        await tick();
+        if (n === 0) throw new Error('stop');
+        finished.push(n);
+      }),
+    ).rejects.toThrow('stop');
+    // Two workers start 0 and 1; 0 throws, 1 (already in flight) finishes.
+    // The abort flag prevents 2, 3, 4 from ever starting.
+    expect(started.sort()).toEqual([0, 1]);
+    expect(finished).toEqual([1]);
+  });
+
   it('returns [] for empty input at any limit', async () => {
     expect(await mapLimit([], 4, async () => 1)).toEqual([]);
   });
