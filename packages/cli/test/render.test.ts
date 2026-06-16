@@ -51,4 +51,20 @@ describe('buildRenderJobs (#62)', () => {
   it('produces exactly one job for a single tutorial rendered in the source language', () => {
     expect(buildRenderJobs([{ tutorial: { id: 'a' } }], [null])).toHaveLength(1);
   });
+
+  it('backstop: throws if two jobs would resolve to the same path (#65)', () => {
+    // `setup` rendered in `es` → "setup.es"; `setup.es` rendered source → also "setup.es".
+    // Note: a dotted id can't reach here via the CLI (validateTutorial/SLUG_RE
+    // forbids it — see spec.test.ts); these literals bypass that to exercise the
+    // backstop directly.
+    expect(() =>
+      buildRenderJobs([{ tutorial: { id: 'setup' } }, { tutorial: { id: 'setup.es' } }], [null, 'es']),
+    ).toThrow(/collision.*setup\.es/i);
+  });
+
+  it('does not flag legitimately distinct id+suffix combinations', () => {
+    expect(() =>
+      buildRenderJobs([{ tutorial: { id: 'setup' } }, { tutorial: { id: 'teardown' } }], ['es', 'fr']),
+    ).not.toThrow();
+  });
 });
