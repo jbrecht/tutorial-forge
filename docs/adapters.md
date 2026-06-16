@@ -133,3 +133,5 @@ Concurrency > 1 only works if **your adapter is parallel-safe**, because each co
 - **Make teardown idempotent and scoped.** It already must tolerate partial setup; under concurrency it must also only remove *its own* render's data.
 
 If you're not sure your adapter meets this, leave concurrency at `1` — it's the safe default. (TTS synthesis is already safely parallelized within a render via `ttsConcurrency`, independent of this.)
+
+If one render fails, the command stops *scheduling* new ones and exits non-zero, but renders already in flight run to completion first (their logs may interleave after the error) — so a failed batch can still leave a few finished videos behind.

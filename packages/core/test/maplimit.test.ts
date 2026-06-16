@@ -44,4 +44,17 @@ describe('mapLimit', () => {
     ).rejects.toThrow('boom');
     expect(seen).toEqual([0, 1]); // item 2 never started
   });
+
+  it('rejects when a job throws under concurrency > 1', async () => {
+    await expect(
+      mapLimit([0, 1, 2, 3], 2, async (n) => {
+        await tick();
+        if (n === 2) throw new Error('kaboom');
+      }),
+    ).rejects.toThrow('kaboom');
+  });
+
+  it('returns [] for empty input at any limit', async () => {
+    expect(await mapLimit([], 4, async () => 1)).toEqual([]);
+  });
 });
