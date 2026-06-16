@@ -31,6 +31,12 @@ describe('tutorial()', () => {
     expect(() => tutorial('x', [step('a', noop)], { id: 'Has Spaces' })).toThrow(/lowercase slug/);
   });
 
+  it('rejects ids with dots — the first line of defense against render path collisions (#65)', () => {
+    // A dotted id like `setup.es` would otherwise collide with `setup` rendered
+    // in `es` (both → .forge/setup.es); the slug rule forbids it up front.
+    expect(() => tutorial('x', [step('a', noop)], { id: 'setup.es' })).toThrow(/lowercase slug/);
+  });
+
   it('rejects a non-function focus with the index in the message', () => {
     expect(() =>
       tutorial('x', [{ narration: 'a', run: noop, focus: 'nope' as unknown as () => never }]),

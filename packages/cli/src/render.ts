@@ -77,11 +77,14 @@ function jobPathKey(id: string, lang: string | null): string {
  * `<id><suffix>.mp4` output, which under `--render-concurrency > 1` means two
  * renders writing the same paths at once (e.g. `--lang "es,es"`).
  *
- * Throws on the rarer cross-tutorial collision (#65): distinct ids whose
+ * Also throws on the rarer cross-tutorial collision (#65): distinct ids whose
  * id+language suffixes coincide (e.g. a tutorial named `setup.es` and a tutorial
- * `setup` rendered in `es` both resolve to `setup.es`). Serially that was a
- * benign sequential overwrite; under concurrency it's simultaneous corruption,
- * so fail loudly with a clear message instead.
+ * `setup` rendered in `es` both resolve to `setup.es`). This is a **backstop** —
+ * `validateTutorial` already forbids dots in ids (`SLUG_RE`) and `discoverTutorials`
+ * rejects duplicate ids, so it can't occur through the normal CLI path today. It
+ * guards against a future relaxed slug rule or a caller that skips validation,
+ * where the collision would mean simultaneous corruption under concurrency rather
+ * than a benign sequential overwrite.
  */
 export function buildRenderJobs<T extends { id: string }>(
   discovered: Array<{ tutorial: T }>,

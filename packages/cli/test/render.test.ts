@@ -52,8 +52,11 @@ describe('buildRenderJobs (#62)', () => {
     expect(buildRenderJobs([{ tutorial: { id: 'a' } }], [null])).toHaveLength(1);
   });
 
-  it('throws on a cross-tutorial id+suffix collision instead of letting jobs share a path (#65)', () => {
+  it('backstop: throws if two jobs would resolve to the same path (#65)', () => {
     // `setup` rendered in `es` → "setup.es"; `setup.es` rendered source → also "setup.es".
+    // Note: a dotted id can't reach here via the CLI (validateTutorial/SLUG_RE
+    // forbids it — see spec.test.ts); these literals bypass that to exercise the
+    // backstop directly.
     expect(() =>
       buildRenderJobs([{ tutorial: { id: 'setup' } }, { tutorial: { id: 'setup.es' } }], [null, 'es']),
     ).toThrow(/collision.*setup\.es/i);
