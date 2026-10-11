@@ -192,6 +192,73 @@ tutorial-forge preview set-status --only my-tutorial
 
 Pair it with `--phase record` for a **TTS-free** whole-tutorial check: `tutorial-forge render --only <id> --phase record --contact-sheet` drives the browser through every step and emits the sheet without synthesizing any narration (steps pace as silent when no TTS has run), so you can validate selectors and framing across the whole tutorial before spending on a real voice. `preview <step>` is the faster single-step loop; the contact sheet is the whole-tutorial version.
 
+## Screenshots for documentation
+
+The same settled per-step frames the contact sheet is built from can be exported as standalone images, so one tutorial is both your video **and** the screenshot set for your help docs — written once, re-rendered whenever the UI changes.
+
+```sh
+tutorial-forge render --only my-tutorial --stills
+# → dist/my-tutorial.mp4
+# → dist/my-tutorial-stills/01-open-dashboard.png
+#   …
+#   dist/my-tutorial-stills/index.json
+#   dist/my-tutorial-stills/index.md
+```
+
+Each PNG is index-prefixed with its step id, so a directory listing reads in tutorial order. The prefix comes from the step's position in the *tutorial*, not in your selection — `03-save.png` is `03-save.png` whether you exported the whole set or just that one step.
+
+**The index is the point.** Your narration is already the caption, so `index.md` is paste-ready markdown with alt text filled in:
+
+```markdown
+## 3. save
+
+![Click Create event. Saving takes a moment, and the new event appears in the list as a draft.](03-save.png)
+```
+
+`index.json` carries the same data for a docs pipeline to consume: `tutorialId`, the CSS `viewport`, the actual `pixelSize`, and per-still `index`/`id`/`file`/`narration` — plus `title` and `lang` when the tutorial has them. It is written without a timestamp, so a docs repo that commits its stills only sees a diff when an image or its narration actually changed.
+
+Re-exporting replaces the previous set: stills from an earlier run (a renamed step, or a wider selection) are cleared first, so the directory always matches the index next to it. Only the `NN-*.png` files tutorial-forge generates are touched — anything else you keep in that directory stays.
+
+### Only the frames you want
+
+`--stills-steps` takes step ids and/or `from-id..to-id` ranges, comma-separated (and implies `--stills`):
+
+```sh
+tutorial-forge render --only my-tutorial --stills-steps 'open-modal..create-event,settings'
+```
+
+A step id that doesn't exist fails immediately — before the browser launches — and lists the ids that do, so a typo costs a second instead of a whole recording pass.
+
+Persist either form in `forge.config.ts`:
+
+```ts
+export default defineConfig({
+  // …
+  stills: { steps: 'open-modal..create-event', markdown: false },
+});
+```
+
+### The cheap path: no TTS, no ffmpeg
+
+Because `--phase record` paces steps as silent when no TTS has run, you can get the whole image set without synthesizing a word or encoding a frame:
+
+```sh
+tutorial-forge render --only my-tutorial --phase record --stills
+```
+
+That is the fastest way to use tutorial-forge purely as a screenshot generator — drive the app, grab every frame, skip the expensive half of the pipeline.
+
+### What is in the frame
+
+- **Captured at the end of each step**, after the narration hold — the state the viewer is left looking at, not the state before the action.
+- **The fake cursor is present**, parked on the step's `focus` control (or its click target). Helpful for "click this" docs; set `cursor: false` in `forge.config.ts` if you want it gone (it leaves the video too).
+- **No callout ring.** The click highlight fades ~200ms after the action, long before the settled frame.
+- **No zoom.** `--zoom` is applied later as a video filter, so stills are always the full viewport.
+- **Exactly 2× the CSS viewport** — 3840×2160 for the default 1920×1080 render. That comes from the recording context's `deviceScaleFactor: 2`, a browser emulation setting rather than a property of your display, so you get the same dimensions on a retina laptop and a headless CI box. `index.json` records it as `pixelSize`, so you can safely hardcode dimensions in your docs. (It also means ~100KB per frame — downscale in your docs pipeline if that matters.)
+- **A screenshot per step is taken inside the recording window**, so a `--stills` render is very slightly longer than the same render without it. Timings stay self-consistent (the frame is captured before the step's end is stamped); it is the same cost `--contact-sheet` and `--debug` already pay.
+
+If a step fails mid-render you still get the stills for every step that completed — including when you passed `--stills-steps` spanning the step that failed — and the index describes only what was written, so there are no broken image links.
+
 ## Timing manifest
 
 Every render writes `manifest.json` describing the full timeline (per-step start/end, action windows, audio durations, callout boxes). It is the contract between the record and post phases and a debugging gold mine — run with `--keep-work` to keep it on success.

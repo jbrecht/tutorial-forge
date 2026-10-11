@@ -1,12 +1,13 @@
 import { resolve, join } from 'node:path';
 import type { RenderOptions, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { StepError } from '../types.js';
-import { validateTutorial } from '../spec.js';
+import { validateTutorial, stepId } from '../spec.js';
 import { localizeTutorial } from '../i18n.js';
 import { runTTSPhase, loadTTSResult, loadTTSResultIfPresent, silentTTSResult } from './tts.js';
 import { runRecordPhase, loadManifest } from './record.js';
 import { runPostPhase, type PostPhaseResult } from './post.js';
 import { renderContactSheet, contactSheetEntries, contactSheetPath } from './contact-sheet.js';
+import { exportStills, stillsEntries, stillsDir, validateStillsSelection, type StillsResult } from './stills.js';
 import { defaultCacheDir } from '../tts/cache.js';
 import { ensureDir, removeDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
@@ -16,6 +17,8 @@ export interface RenderResult extends PostPhaseResult {
   workDir: string;
   /** Path to the authoring contact sheet, if one was emitted (#9). */
   contactSheetPath?: string | null;
+  /** Exported per-step stills, if --stills was on (#71); null when none were written. */
+  stills?: StillsResult | null;
 }
 
 /**
@@ -42,6 +45,23 @@ export async function render<S = unknown>(
   const leadInMs = options.leadInMs ?? 300;
   const phase = options.phase ?? 'all';
   const wantContactSheet = options.contactSheet ?? false;
+  const stillsConfig = options.stills === true ? {} : options.stills || undefined;
+  const wantStills = stillsConfig !== undefined;
+  // The tutorial spec's step ids — the authority for stills numbering and
+  // selection, including on a failed render whose manifest holds only the
+  // steps that completed.
+  const tutorialStepIds = tutorial.steps.map((s, i) => stepId(s, i));
+  // Fail a typo'd --stills-steps now, not after a full recording pass.
+  if (wantStills && stillsConfig.steps) {
+    validateStillsSelection(tutorialStepIds, tutorial.id, stillsConfig.steps);
+  }
+  // Only the recording phases produce frames to publish. Say so up front
+  // rather than letting the flag look like it worked.
+  if (wantStills && phase !== 'all' && phase !== 'record') {
+    logger.warn(
+      `stills: skipped — phase "${phase}" does not record frames (use --phase record or all)`,
+    );
+  }
   await ensureDir(workDir);
 
   try {
@@ -76,7 +96,7 @@ export async function render<S = unknown>(
             lang,
             recorder: options.recorder,
             debug: options.debug,
-            screenshots: wantContactSheet || options.debug,
+            screenshots: wantContactSheet || wantStills || options.debug,
           })
         : await loadManifest(workDir);
 
@@ -89,8 +109,32 @@ export async function render<S = unknown>(
       else logger.warn('contact sheet: no step screenshots found to assemble');
     }
 
+    // Documentation stills (#71): copied out of the work dir so they survive
+    // its cleanup. Done right after record (not in post) so the TTS-free
+    // `--phase record` framing check can produce the image set on its own.
+    let stills: StillsResult | null = null;
+    if (wantStills && (phase === 'all' || phase === 'record')) {
+      stills = await exportStills(
+        stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds),
+        stillsDir(output),
+        { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
+        stillsConfig,
+      );
+      if (stills.dir) {
+        logger.info(
+          `stills: ${stills.files.length} image(s) in ${stills.dir}` +
+            (stills.pruned ? ` (replaced ${stills.pruned} from a previous export)` : ''),
+        );
+      } else {
+        logger.warn('stills: no step screenshots found to export');
+      }
+      if (stills.missing.length) {
+        logger.warn(`stills: no screenshot for step(s) ${stills.missing.join(', ')}`);
+      }
+    }
+
     if (phase === 'record') {
-      return { ...partialResult(workDir, output, manifest), contactSheetPath: sheetPath };
+      return { ...partialResult(workDir, output, manifest), contactSheetPath: sheetPath, stills };
     }
 
     const post = await runPostPhase(manifest, {
@@ -117,7 +161,7 @@ export async function render<S = unknown>(
     } else {
       logger.info(`work dir kept at ${workDir}`);
     }
-    return { ...post, manifest, workDir, contactSheetPath: sheetPath };
+    return { ...post, manifest, workDir, contactSheetPath: sheetPath, stills };
   } catch (err) {
     logger.error(`render failed — work dir kept at ${workDir}`);
     // On a step failure, the steps that completed already have settled
@@ -126,6 +170,11 @@ export async function render<S = unknown>(
     // frame" view exists for exactly the run you most want it for (#20).
     if (wantContactSheet && err instanceof StepError) {
       await emitFailureContactSheet(err, workDir, output, viewport);
+    }
+    // Same bargain for stills: the steps that completed already have frames on
+    // disk, and a partial image set is still useful to a docs author.
+    if (wantStills && err instanceof StepError) {
+      await emitPartialStills(workDir, output, tutorial, tutorialStepIds, lang, viewport, stillsConfig);
     }
     throw err;
   }
@@ -153,6 +202,32 @@ async function emitFailureContactSheet(
     if (sheet) logger.info(`contact sheet (partial, through failure): ${sheet}`);
   } catch (sheetErr) {
     logger.warn(`partial contact sheet skipped: ${sheetErr instanceof Error ? sheetErr.message : sheetErr}`);
+  }
+}
+
+/** Best-effort stills export for a failed render. Never throws — diagnostics must not mask the StepError. */
+async function emitPartialStills(
+  workDir: string,
+  output: string,
+  tutorial: Pick<Tutorial<never>, 'id' | 'title'>,
+  tutorialStepIds: string[],
+  lang: string | undefined,
+  viewport: { width: number; height: number },
+  config: { steps?: string; markdown?: boolean },
+): Promise<void> {
+  try {
+    const manifest = await loadManifest(workDir); // completed steps only
+    const result = await exportStills(
+      // Selection and numbering resolve against the full tutorial, so a
+      // selection naming a step that never ran still exports the ones that did.
+      stillsEntries(manifest, workDir, config.steps, tutorialStepIds),
+      stillsDir(output),
+      { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
+      config,
+    );
+    if (result.dir) logger.info(`stills (partial, through failure): ${result.files.length} image(s) in ${result.dir}`);
+  } catch (stillsErr) {
+    logger.warn(`partial stills skipped: ${stillsErr instanceof Error ? stillsErr.message : stillsErr}`);
   }
 }
 

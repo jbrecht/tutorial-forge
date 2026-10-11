@@ -69,6 +69,7 @@ Every stage writes inspectable artifacts to a work directory (`.forge/<id>/`), k
 
 - `tutorial-forge preview <step>` renders a single step to a PNG in seconds — it replays setup + prior steps to reach state, then runs just the target step (by 1-based index or step id) and screenshots it. No TTS, no encode. Validate selectors and framing without re-recording the whole tutorial.
 - `tutorial-forge render --contact-sheet` emits a labeled grid PNG (one settled thumbnail per step) next to the video. A passing render only proves selectors *resolved* — the contact sheet lets you confirm every step framed the *right* thing at a glance.
+- `tutorial-forge render --stills` exports the per-step frames as standalone PNGs plus a captioned `index.md`/`index.json`, so one tutorial is both your video and the screenshot set for your help docs. Add `--phase record` to get the images with no TTS and no ffmpeg.
 
 ## How it compares
 

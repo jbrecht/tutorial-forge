@@ -88,6 +88,8 @@ Output: `<outDir>/<tutorial-id>.mp4` plus a sidecar `.srt` (set `subtitles: 'bur
 
 **GIF export:** pass `--gif` to also write an animated GIF next to the MP4 — fps-downsampled, palette-optimized, with narration captions burned in (GIFs are silent). Excerpt a step range with `--gif-steps open-modal..create-event`, or configure via `gif: { widthPx, fps, captions, steps }`. Perfect for READMEs and social posts.
 
+**Documentation stills:** pass `--stills` to also export the per-step frames as standalone PNGs in `<outDir>/<id>-stills/`, numbered by step, alongside an `index.json` and a paste-ready `index.md` that uses each step's **narration as alt text**. One tutorial then serves as both your video and the screenshot set for your help docs. Narrow it with `--stills-steps 'open-modal..create-event'`, or configure via `stills: { steps, markdown }`. Add `--phase record` to get the images with no TTS and no ffmpeg — see [Screenshots for documentation](writing-tutorials.md#screenshots-for-documentation).
+
 **Idle speed-up:** pass `--idle-speedup` (or `idleSpeedup: true` / `{ maxIdleMs: 2000, speed: 3 }`) to fast-forward narration-free waits — spinners, slow loads, long silent steps. Narration playback and click choreography always stay at 1x; audio offsets and subtitle cues are remapped to the shortened timeline automatically.
 
 **Chapters:** every render embeds chapter markers so learners can self-pace and jump between segments — the strongest, cheapest learning win a tutorial video gets. You get three things at no extra recording cost, derived from the per-step timeline:

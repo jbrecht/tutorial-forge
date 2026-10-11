@@ -224,6 +224,18 @@ export interface RenderOptions {
    */
   contactSheet?: boolean;
   /**
+   * Export the per-step frames as PNGs next to the video (#71), so a render
+   * doubles as the screenshot source for help documentation. Writes
+   * `<name>-stills/NN-<step-id>.png` plus an `index.json`/`index.md` carrying
+   * each step's narration as alt text. Pass `{ steps }` to export a subset
+   * (comma-separated ids and/or "from-id..to-id" ranges). Default off.
+   *
+   * Stills are the full un-zoomed viewport and include the fake cursor but no
+   * callout ring. Works under `--phase record`, so `phase: 'record'` + `stills`
+   * produces the image set with no TTS and no ffmpeg.
+   */
+  stills?: boolean | { steps?: string; markdown?: boolean };
+  /**
    * Emit chapter markers (#35): an MP4 chapter track plus `.chapters.vtt` and
    * `.chapters.txt` sidecars, derived from per-step boundaries, so learners can
    * self-pace and jump between segments. One chapter per narrated step; silent

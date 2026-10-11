@@ -44,6 +44,12 @@ export interface ForgeConfig {
   recorder?: 'video' | 'screencast';
   /** Emit a per-step contact sheet next to each video for authoring verification (#9). Default off. */
   contactSheet?: boolean;
+  /**
+   * Export per-step stills next to each video for reuse as documentation
+   * screenshots (#71). `{ steps }` selects a subset (ids and/or "a..b" ranges).
+   * Default off.
+   */
+  stills?: boolean | { steps?: string; markdown?: boolean };
   /** Emit chapter markers — MP4 chapter track + .chapters.vtt/.txt sidecars (#35). Default true. */
   chapters?: boolean;
   /** Render intro/recap cards from each tutorial's objectives/summary (#37). Default true. */
@@ -109,6 +115,15 @@ const configSchema = z.object({
     .optional(),
   recorder: z.enum(['video', 'screencast']).optional(),
   contactSheet: z.boolean().optional(),
+  stills: z
+    .union([
+      z.boolean(),
+      z.object({
+        steps: z.string().optional(),
+        markdown: z.boolean().optional(),
+      }),
+    ])
+    .optional(),
   chapters: z.boolean().optional(),
   cards: z.boolean().optional(),
 });
