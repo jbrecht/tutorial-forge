@@ -28,6 +28,10 @@ export interface RenderCmdOptions {
   recorder?: string;
   /** Emit a per-step contact sheet next to the video for authoring verification. */
   contactSheet?: boolean;
+  /** Export per-step stills next to the video for documentation screenshots. */
+  stills?: boolean;
+  /** Stills subset ("step-id", "a..b", or a comma-separated mix). Implies --stills. */
+  stillsSteps?: string;
   /** Chapter markers. Commander sets this false only when --no-chapters is passed (else true). */
   chapters?: boolean;
   /** Intro/recap cards. Commander sets this false only when --no-cards is passed (else true). */
@@ -42,6 +46,19 @@ function resolveGifOption(
   if (!opts.gif && !opts.gifSteps) return configGif;
   const base = typeof configGif === 'object' ? configGif : {};
   return opts.gifSteps ? { ...base, steps: opts.gifSteps } : { ...base };
+}
+
+/**
+ * Merge --stills/--stills-steps with config.stills (flags win; --stills-steps
+ * implies --stills). Mirrors resolveGifOption.
+ */
+export function resolveStillsOption(
+  opts: Pick<RenderCmdOptions, 'stills' | 'stillsSteps'>,
+  configStills: ForgeConfig['stills'],
+): ForgeConfig['stills'] {
+  if (!opts.stills && !opts.stillsSteps) return configStills;
+  const base = typeof configStills === 'object' ? configStills : {};
+  return opts.stillsSteps ? { ...base, steps: opts.stillsSteps } : { ...base };
 }
 
 function resolveRecorder(value: string | undefined): 'video' | 'screencast' | undefined {
@@ -166,6 +183,7 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
       recorder: resolveRecorder(opts.recorder) ?? config.recorder,
       debug: opts.debug,
       contactSheet: opts.contactSheet ?? config.contactSheet,
+      stills: resolveStillsOption(opts, config.stills),
       // --no-chapters forces off; otherwise fall back to config (post defaults on).
       chapters: opts.chapters === false ? false : config.chapters,
       // --no-cards forces off; otherwise fall back to config (post defaults on).
@@ -177,9 +195,11 @@ export async function renderCommand(globs: string[], opts: RenderCmdOptions): Pr
       if (result.chaptersVttPath) console.log(`  chapters:  ${result.chaptersVttPath}`);
       if (result.gifPath) console.log(`  gif:       ${result.gifPath}`);
       if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
+      if (result.stills?.dir) console.log(`  stills:    ${result.stills.files.length} in ${result.stills.dir}`);
     } else {
       console.log(`✓ phase "${opts.phase}" complete — work dir: ${result.workDir}`);
       if (result.contactSheetPath) console.log(`  contact:   ${result.contactSheetPath}`);
+      if (result.stills?.dir) console.log(`  stills:    ${result.stills.files.length} in ${result.stills.dir}`);
     }
   });
 }

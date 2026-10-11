@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveRenderConcurrency, buildRenderJobs } from '../src/render.js';
+import { resolveRenderConcurrency, buildRenderJobs, resolveStillsOption } from '../src/render.js';
 
 describe('resolveRenderConcurrency (#62)', () => {
   it('defaults to 1 when neither flag nor config is set (serial — unchanged behavior)', () => {
@@ -66,5 +66,33 @@ describe('buildRenderJobs (#62)', () => {
     expect(() =>
       buildRenderJobs([{ tutorial: { id: 'setup' } }, { tutorial: { id: 'teardown' } }], ['es', 'fr']),
     ).not.toThrow();
+  });
+});
+
+describe('resolveStillsOption (#71)', () => {
+  it('passes config through untouched when neither flag is given', () => {
+    expect(resolveStillsOption({}, undefined)).toBeUndefined();
+    expect(resolveStillsOption({}, true)).toBe(true);
+    expect(resolveStillsOption({}, { steps: 'a..b' })).toEqual({ steps: 'a..b' });
+  });
+
+  it('enables stills from the bare flag with no config', () => {
+    expect(resolveStillsOption({ stills: true }, undefined)).toEqual({});
+  });
+
+  it('keeps other config keys when the flag turns stills on', () => {
+    expect(resolveStillsOption({ stills: true }, { markdown: false })).toEqual({ markdown: false });
+  });
+
+  it('lets --stills-steps imply --stills and override config.steps', () => {
+    expect(resolveStillsOption({ stillsSteps: 'save' }, undefined)).toEqual({ steps: 'save' });
+    expect(resolveStillsOption({ stillsSteps: 'save' }, { steps: 'open', markdown: false })).toEqual({
+      steps: 'save',
+      markdown: false,
+    });
+  });
+
+  it('does not inherit steps from a boolean config', () => {
+    expect(resolveStillsOption({ stillsSteps: 'save' }, true)).toEqual({ steps: 'save' });
   });
 });
