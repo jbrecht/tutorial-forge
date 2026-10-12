@@ -44,10 +44,11 @@ export interface StillEntry {
   /** Basename written into the stills dir, e.g. "03-set-status.png". */
   file: string;
   /**
-   * Whether *this* recording pass produced a frame for the step. Work dirs are
-   * reused and record never clears `steps/`, so a file at `source` may be a
-   * leftover from an earlier, successful run — exporting that as current would
-   * silently publish a stale screenshot. Only manifest-backed steps count.
+   * Whether *this* recording pass produced a frame for the step — true only for
+   * steps present in the pass's manifest, which on a failed render is just the
+   * ones that completed. `runRecordPhase` clears `steps/` on entry so a reused
+   * work dir cannot carry frames between passes; this flag is the second guard,
+   * keeping a partial render from publishing a frame for a step that never ran.
    */
   recorded: boolean;
 }
@@ -220,8 +221,7 @@ export function stillsEntries(
       narration: recordedById.get(id) ?? '',
       source: join(workDir, 'steps', `${id}.png`),
       file: stillFileName(i + 1, id, total),
-      // A step absent from the manifest did not record in this pass; any file
-      // sitting at `source` is a leftover from an earlier run.
+      // A step absent from the manifest did not record in this pass.
       recorded,
     };
   });
