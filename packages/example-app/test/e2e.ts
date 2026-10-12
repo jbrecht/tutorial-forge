@@ -160,6 +160,15 @@ try {
     );
     // #71 §4 — index.md headings read from the caption, not the raw step id.
     assert.ok(!md.includes(`## 1. ${result.manifest.steps[0]!.id}`), 'heading is not the bare step id');
+    // #71 §1 — the published bytes must BE the pre-action frame. Asserting only
+    // that @before.png exists would pass even if the export wired up the
+    // settled frame, which is the original defect.
+    const firstId = result.manifest.steps[0]!.id;
+    assert.deepEqual(
+      readFileSync(join(stills!.dir!, `${firstId}.png`)),
+      readFileSync(join(outDir, 'work', 'steps', `${firstId}@before.png`)),
+      'the published still is the pre-action frame (#71 §1)',
+    );
     console.log(`e2e OK [stills]: ${stills!.files.length} images + index in ${stills!.dir}`);
   }
 
@@ -763,12 +772,14 @@ try {
         ttsCacheDir: join(outDir, 'tts-cache'),
         cards: false,
         chapters: false,
-        ...(stills ? { stills: true } : {}),
+        ...(stills ? { stills: { capture: 'after' as const } } : {}),
       });
       return { out, totalMs: r.manifest.totalDurationMs, outputMs: r.outputDurationMs };
     };
 
     const plain = await armFor(false);
+    // capture: 'after' is what exercises the settled-capture path — the code
+    // §3 actually broke. The default ('before') skips it entirely.
     const withStills = await armFor(true);
     const totalDrift = Math.abs(withStills.totalMs - plain.totalMs);
     const outputDrift = Math.abs(withStills.outputMs - plain.outputMs);
@@ -783,6 +794,57 @@ try {
     console.log(
       `e2e OK [stills-timing-parity]: ${plain.totalMs}ms vs ${withStills.totalMs}ms recorded (#71 §3)`,
     );
+  }
+
+  // #71 §2 — cropping clips to the step's focus target, and both variants of a
+  // 'both' export get the same treatment (the settled frame used to come out
+  // full-frame beside a cropped pre-action one).
+  {
+    const cropped = tutorial('Cropped stills', [
+      step('Open the Events page from the navigation bar.', async (page) => {
+        await page.getByRole('link', { name: 'Events' }).first().click();
+      }, {
+        id: 'nav',
+        focus: (page) => page.getByRole('link', { name: 'Events' }).first(),
+        still: 'both',
+        alt: 'The Events link in the navigation bar.',
+      }),
+    ], { id: 'cropped-stills' });
+    const croppedOutput = join(outDir, 'cropped-stills.mp4');
+    const r = await render(cropped, adapter, {
+      tts: SilentProvider(),
+      output: croppedOutput,
+      workDir: join(outDir, 'work-cropped'),
+      ttsCacheDir: join(outDir, 'tts-cache'),
+      phase: 'record',
+      keepWorkDir: true,
+      stills: { crop: 'target', cropPaddingPx: 20 },
+    });
+    const dir = r.stills!.dir!;
+    const before = readFileSync(join(dir, 'nav.png'));
+    const after = readFileSync(join(dir, 'nav-after.png'));
+    const dims = (buf: Buffer) => ({ w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) });
+    const b = dims(before);
+    const a = dims(after);
+    assert.ok(b.w < 1920 && b.h < 1080, `pre-action still is cropped (got ${b.w}x${b.h})`);
+    assert.ok(a.w < 1920 && a.h < 1080, `settled still is cropped too (got ${a.w}x${a.h})`);
+    // Not identical: the box is measured at each capture point, and here the
+    // nav link grows slightly once it becomes the active item. Same element,
+    // so the two crops should still be close.
+    assert.ok(
+      Math.abs(a.w - b.w) < 40 && Math.abs(a.h - b.h) < 40,
+      `both variants crop to the same control (got ${b.w}x${b.h} and ${a.w}x${a.h})`,
+    );
+    // #71 §4 — alt overrides the narration as the caption.
+    const idx = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
+    assert.equal(idx.stills[0].narration, 'The Events link in the navigation bar.', 'alt overrides narration');
+    assert.deepEqual(
+      idx.stills.map((e: { variant: string }) => e.variant),
+      ['before', 'after'],
+      'index distinguishes the two frames',
+    );
+    assert.ok(!('pixelSize' in idx), 'pixelSize omitted when stills are cropped');
+    console.log(`e2e OK [stills-crop/alt]: ${b.w}x${b.h} cropped pair in ${dir}`);
   }
 
   // #71 — a stills export failure must never cost a successful render its MP4.

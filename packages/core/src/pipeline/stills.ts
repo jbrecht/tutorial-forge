@@ -10,17 +10,19 @@ import { ensureDir, exists } from '../util/fs.js';
  * captures as a durable, named artifact, so a render doubles as the
  * screenshot source for help documentation.
  *
- * The frames come from record's settled end-of-step screenshots
- * (workDir/steps/<id>.png) — the same ones the contact sheet assembles — so
- * this phase is pure file plumbing: select, copy, index. The index is the
- * point: narration is already written alt text, so a docs author gets
- * captioned images that stay in sync with the video's script.
+ * Record captures up to two frames per step — the pre-action one
+ * (workDir/steps/<id>@before.png), taken with the cursor on the focus target,
+ * and the settled end-of-step one (workDir/steps/<id>.png, also what the
+ * contact sheet assembles). This phase is file plumbing over those: select a
+ * variant, copy, index. The index is the point: a step's `alt` (or its
+ * narration) becomes the caption, so a docs author gets captioned images that
+ * stay in sync with the tutorial.
  *
- * Scope notes (see #71): stills are the full, un-zoomed viewport (zoom is an
- * ffmpeg filter applied later in post) and carry the fake cursor but no
- * callout ring (the ring self-removes long before the settled frame). They
- * come out at 2x the CSS viewport, deterministically, from record's
- * `deviceScaleFactor: 2`.
+ * Scope notes (see #71): zoom never applies (it is an ffmpeg filter applied
+ * later in post); stills carry the fake cursor but no callout ring (it
+ * self-removes well before either capture point). A full-frame still is 2x the
+ * CSS viewport from record's `deviceScaleFactor: 2`; under `crop` each image is
+ * its own target's size instead.
  */
 
 export interface StillsConfig {
@@ -85,7 +87,7 @@ export interface StillEntry {
  * "can't compare".
  */
 function decodePng(buf: Buffer): { width: number; height: number; channels: number; data: Buffer } | null {
-  if (buf.length < 8 || buf.toString('ascii', 1, 4) !== 'PNG') return null;
+  if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
   let pos = 8;
   let width = 0;
   let height = 0;
@@ -93,15 +95,20 @@ function decodePng(buf: Buffer): { width: number; height: number; channels: numb
   const idat: Buffer[] = [];
   while (pos + 8 <= buf.length) {
     const len = buf.readUInt32BE(pos);
+    // A chunk that runs past the end means the file is truncated — a half-written
+    // copy, say. Bail instead of reading a short subarray and overrunning it.
+    if (pos + 12 + len > buf.length) return null;
     const type = buf.toString('ascii', pos + 4, pos + 8);
     const body = buf.subarray(pos + 8, pos + 8 + len);
     if (type === 'IHDR') {
+      if (body.length < 13) return null;
       width = body.readUInt32BE(0);
       height = body.readUInt32BE(4);
       const depth = body[8];
       const colorType = body[9];
       const interlace = body[12];
       if (depth !== 8 || interlace !== 0) return null;
+      if (width <= 0 || height <= 0 || width > 20000 || height > 20000) return null;
       const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 4: 2, 6: 4 };
       channels = CHANNELS[colorType!] ?? 0;
       if (!channels) return null;
@@ -115,7 +122,9 @@ function decodePng(buf: Buffer): { width: number; height: number; channels: numb
   if (!width || !height || !channels || idat.length === 0) return null;
   let raw: Buffer;
   try {
-    raw = inflateSync(Buffer.concat(idat));
+    // Cap the output at exactly what IHDR implies, so a corrupt or crafted IDAT
+    // can't inflate into an unbounded allocation.
+    raw = inflateSync(Buffer.concat(idat), { maxOutputLength: (width * channels + 1) * height });
   } catch {
     return null;
   }
@@ -154,6 +163,8 @@ function decodePng(buf: Buffer): { width: number; height: number; channels: numb
   return { width, height, channels, data: out };
 }
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 /** Largest per-channel difference that still counts as the same screenshot. */
 const STILL_PIXEL_TOLERANCE = 8;
 
@@ -173,8 +184,17 @@ export async function stillsEquivalent(a: string, b: string): Promise<boolean> {
     return false;
   }
   if (bufA.equals(bufB)) return true;
-  const pa = decodePng(bufA);
-  const pb = decodePng(bufB);
+  // A malformed destination (a half-written copy from an interrupted export, or
+  // something an author dropped in) must degrade to "different" — i.e. rewrite
+  // it — never abort the export.
+  let pa: ReturnType<typeof decodePng>;
+  let pb: ReturnType<typeof decodePng>;
+  try {
+    pa = decodePng(bufA);
+    pb = decodePng(bufB);
+  } catch {
+    return false;
+  }
   if (!pa || !pb) return false;
   if (pa.width !== pb.width || pa.height !== pb.height || pa.channels !== pb.channels) return false;
   for (let i = 0; i < pa.data.length; i++) {
@@ -193,6 +213,8 @@ export interface StillIndexEntry {
   id: string;
   file: string;
   narration: string;
+  /** Which frame this is. Present so a `capture: 'both'` pair is distinguishable. */
+  variant?: 'before' | 'after';
 }
 
 /**
@@ -203,6 +225,11 @@ export interface StillIndexEntry {
  * docs repo. Returns [] when there is no readable previous index, which makes
  * the export purely additive — the safe direction.
  */
+/** True when this step published a still this run, but under a different filename. */
+function renamedAway(previous: StillIndexEntry, present: StillEntry[]): boolean {
+  return present.some((e) => e.id === previous.id && e.file !== previous.file);
+}
+
 async function readPreviousIndex(outDir: string): Promise<StillIndexEntry[]> {
   try {
     const raw = await readFile(join(outDir, 'index.json'), 'utf8');
@@ -365,7 +392,7 @@ export function stillsEntries(
   for (const i of selectStillStepIds(tutorialStepIds, manifest.tutorialId, steps)) {
     const id = tutorialStepIds[i]!;
     const step = recorded.get(id);
-    const mode = step?.still ?? defaultMode;
+    const mode = assertCaptureMode(step?.still ?? defaultMode, id);
     // Caption precedence: the step's explicit alt, else its narration (#71 §4).
     const caption = step?.alt ?? step?.narration ?? '';
     const variants: Array<'before' | 'after'> =
@@ -381,14 +408,23 @@ export function stillsEntries(
         narration: caption,
         // record writes the pre-action frame as <id>@before.png and the
         // settled one as <id>.png.
-        source: join(workDir, 'steps', variant === 'before' ? `${id}@before.png` : `${id}.png`),
+        // Matches what record writes — both sides sanitise, so an awkward id
+        // can't point the export at a path record never wrote (or escape the dir).
+        source: join(
+          workDir,
+          'steps',
+          variant === 'before' ? `${fileSafeId(id)}@before.png` : `${fileSafeId(id)}.png`,
+        ),
         file: stillFileName(i + 1, id, total, scheme, suffixed ? variant : 'before'),
         variant,
         recorded: step !== undefined,
       });
     }
   }
-  assertNoFilenameCollisions(entries, scheme);
+  // Check the whole tutorial, not just the selection: two colliding steps in
+  // separate subset exports would otherwise each succeed and silently write
+  // onto one file.
+  assertNoFilenameCollisions(tutorialStepIds, total, scheme, manifest.tutorialId);
   return entries;
 }
 
@@ -397,20 +433,29 @@ export function stillsEntries(
  * and `fileSafeId` can map two distinct ids onto one name ("a b" and "a-b").
  * Fail loudly rather than silently overwriting one still with another.
  */
-function assertNoFilenameCollisions(entries: StillEntry[], scheme: 'id' | 'indexed'): void {
+export function assertNoFilenameCollisions(
+  tutorialStepIds: string[],
+  totalSteps: number,
+  scheme: 'id' | 'indexed',
+  tutorialId: string,
+): void {
   const seen = new Map<string, string>();
-  for (const e of entries) {
-    const prior = seen.get(e.file);
-    if (prior !== undefined && prior !== e.id) {
-      throw new Error(
-        `Steps "${prior}" and "${e.id}" both produce the still "${e.file}". ` +
-          (scheme === 'id'
-            ? 'Rename one step, or set stills.filenames to "indexed".'
-            : 'Rename one of the steps.'),
-      );
+  tutorialStepIds.forEach((id, i) => {
+    // Both variants, so a step named "<x>-after" can't collide with x's settled frame.
+    for (const variant of ['before', 'after'] as const) {
+      const file = stillFileName(i + 1, id, totalSteps, scheme, variant);
+      const prior = seen.get(file);
+      if (prior !== undefined && prior !== id) {
+        throw new Error(
+          `Steps "${prior}" and "${id}" in tutorial "${tutorialId}" both produce the still "${file}". ` +
+            (scheme === 'id'
+              ? 'Rename one step, or set stills.filenames to "indexed".'
+              : 'Rename one of the steps.'),
+        );
+      }
+      seen.set(file, id);
     }
-    seen.set(e.file, e.id);
-  }
+  });
 }
 
 export interface StillsIndexMeta {
@@ -470,11 +515,14 @@ export function stillsIndexJson(entries: StillIndexEntry[], meta: StillsIndexMet
         ...(meta.lang ? { lang: meta.lang } : {}),
         viewport: meta.viewport,
         ...(meta.pixelSize ? { pixelSize: meta.pixelSize } : {}),
+        // Per-still dimensions, so a cropped set is still machine-readable.
+        ...(meta.pixelSize ? {} : { pixelSizeVaries: true }),
         stills: entries.map((e) => ({
           index: e.index,
           id: e.id,
           file: e.file,
           narration: e.narration,
+          ...(e.variant ? { variant: e.variant } : {}),
         })),
       },
       null,
@@ -489,10 +537,48 @@ export function stillsIndexJson(entries: StillIndexEntry[], meta: StillsIndexMet
  * Falls back to the id when there is no caption.
  */
 function headingFor(e: StillIndexEntry): string {
-  const first = (e.narration ?? '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s/)[0]?.trim();
-  if (!first) return e.id;
-  const titled = first.length > 60 ? `${first.slice(0, 57).trimEnd()}…` : first;
-  return titled.replace(/[.]$/, '');
+  const flat = (e.narration ?? '').replace(/\s+/g, ' ').trim();
+  const base = flat ? firstSentence(flat) : e.id;
+  // Under capture: 'both' the two frames share a caption and an index; say which
+  // is which rather than emitting the same heading twice.
+  return e.variant === 'after' ? `${base} (result)` : base;
+}
+
+/**
+ * The caption's opening sentence, for a section heading. Splits on terminal
+ * punctuation followed by a capital, so "e.g. report.pdf" doesn't end the
+ * sentence, and truncates on grapheme boundaries so an emoji or combining mark
+ * is never cut in half.
+ */
+function firstSentence(text: string): string {
+  const match = /^(.*?[.!?\u3002])(?=\s+[\p{Lu}\p{Lo}])/u.exec(text);
+  const sentence = (match?.[1] ?? text).trim();
+  const stripped = sentence.replace(/[.\u3002]+$/u, '');
+  return truncateGraphemes(stripped, 60).replace(/[|\[\]#`<>]/g, '');
+}
+
+/** Truncate to at most `max` user-perceived characters, appending an ellipsis. */
+function truncateGraphemes(text: string, max: number): string {
+  const units =
+    typeof Intl !== 'undefined' && 'Segmenter' in Intl
+      ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((g) => g.segment)
+      : [...text];
+  if (units.length <= max) return text;
+  return `${units.slice(0, max - 1).join('').trimEnd()}…`;
+}
+
+/** Guard the mode for callers who bypass the zod-validated config (the programmatic API). */
+function assertCaptureMode(mode: unknown, stepId: string): 'before' | 'after' | 'both' {
+  if (mode !== 'before' && mode !== 'after' && mode !== 'both') {
+    throw new Error(
+      `Invalid stills capture mode ${JSON.stringify(mode)} for step "${stepId}" (expected before | after | both)`,
+    );
+  }
+  return mode;
+}
+
+function variantRank(e: StillIndexEntry): number {
+  return e.variant === 'after' ? 1 : 0;
 }
 
 /** Escape text for use as markdown image alt text (single-line, bracket-safe). */
@@ -607,14 +693,19 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
   }
 
   // Reconcile against the previous export.
-  const freshIds = new Set(present.map((e) => e.id));
+  const freshFiles = new Set(present.map((e) => e.file));
   const tutorialIds = new Set(input.tutorialStepIds ?? entries.map((e) => e.id));
   const carried: StillIndexEntry[] = [];
   let pruned = 0;
   for (const p of previous) {
-    if (freshIds.has(p.id)) continue; // just rewritten
-    if (!tutorialIds.has(p.id)) {
-      // The step is gone from the tutorial — its still is an orphan.
+    if (freshFiles.has(p.file)) continue; // just rewritten
+    // Keying on the *file*, not the id, is what catches a still whose name
+    // changed — switching filenames: 'indexed' → 'id', or capture 'both' → one
+    // variant. Keyed on id those files survived on disk while dropping out of
+    // the index, leaving a docs page pointing at a frozen screenshot forever.
+    if (!tutorialIds.has(p.id) || renamedAway(p, present)) {
+      // Either the step left the tutorial, or this step published under a
+      // different name this run — the old file is an orphan either way.
       try {
         await unlink(join(outDir, p.file));
         pruned++;
@@ -627,14 +718,29 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
     if (await exists(join(outDir, p.file))) carried.push(p);
   }
 
-  // Stamp the real pixel dimensions from what we just wrote.
-  const pixelSize = (await pngSize(files[0]!)) ?? meta.pixelSize;
-  const indexMeta: StillsIndexMeta = { ...meta, pixelSize };
+  // Stamp the real pixel dimensions — but only when every still shares them.
+  // Under crop each image has its own size, and a single number would be a lie
+  // an author might hardcode.
+  const sizes = await Promise.all(files.map((f) => pngSize(f)));
+  const first = sizes[0];
+  const uniform =
+    first !== undefined &&
+    sizes.every((d) => d !== undefined && d.width === first.width && d.height === first.height);
+  const indexMeta: StillsIndexMeta = {
+    ...meta,
+    ...(uniform ? { pixelSize: first } : { pixelSize: undefined }),
+  };
 
   const indexed: StillIndexEntry[] = [
-    ...present.map((e) => ({ index: e.index, id: e.id, file: e.file, narration: e.narration })),
+    ...present.map((e) => ({
+      index: e.index,
+      id: e.id,
+      file: e.file,
+      narration: e.narration,
+      variant: e.variant,
+    })),
     ...carried,
-  ].sort((a, b) => a.index - b.index);
+  ].sort((a, b) => a.index - b.index || variantRank(a) - variantRank(b));
 
   const indexJsonPath = join(outDir, 'index.json');
   await writeFile(indexJsonPath, stillsIndexJson(indexed, indexMeta));

@@ -20,11 +20,11 @@ Everything below is opt-in. Notes for existing consumers:
 
 ## 0.14.0 — documentation stills
 
-- **Export per-step screenshots for your help docs (`--stills`, #71).** A render already captures a settled frame per step; this publishes them next to the video, so one tutorial is both the video *and* the screenshot set for your documentation — re-rendered whenever the UI changes.
+- **Export per-step screenshots for your help docs (`--stills`, #71).** A render captures a frame per step; this publishes them next to the video, so one tutorial is both the video *and* the screenshot set for your documentation — re-rendered whenever the UI changes.
 
   ```sh
   tutorial-forge render --only my-tutorial --stills
-  # → dist/my-tutorial-stills/01-open-dashboard.png …
+  # → dist/my-tutorial-stills/open-dashboard.png …
   #   dist/my-tutorial-stills/index.json
   #   dist/my-tutorial-stills/index.md
   ```
@@ -40,16 +40,17 @@ Everything below is opt-in. Notes for existing consumers:
   - **Re-exporting merges.** Regenerating one changed step keeps the other stills and rebuilds the index over everything present. A still whose step has left the tutorial is removed — but pruning reads the previous `index.json` rather than matching filenames, so your own files in that directory (`03-save-annotated.png`, `notes.md`) are never touched.
   - **A failed render still exports the steps that completed**, including when `--stills-steps` spans the step that failed, and the index lists only what was written — no broken links. Only frames from *that* recording pass are published, so a reused work dir can't leak a stale screenshot into a later export.
   - **A stills failure never costs you the video.** If the directory can't be written (a file in the way, a read-only path, a full disk) the render warns and carries on to produce the MP4.
-  - A localized render writes its own `<id>.<lang>-stills/` directory with translated alt text and identical filenames, so a docs site can swap directories per locale.
+  - A localized render writes its own `<id>.<lang>-stills/` directory with identical filenames and translated captions — narration from the usual table, and `alt` from a `"<step-id>.alt"` key, so a docs site can swap directories per locale.
 
   Frames are the full **un-zoomed** viewport (`--zoom` is a post-phase filter), include the fake cursor, and carry no callout ring (it self-removes long before the settled frame). They come out at exactly **2× the CSS viewport** — 3840×2160 for the default 1920×1080 — from the recording context's `deviceScaleFactor: 2`, which is browser emulation rather than a display property, so the dimensions are identical on a retina laptop and headless CI.
 
-  **The video is byte-for-byte unaffected by the flag.** Captures happen inside each step's existing hold and the step is paced against a capture-free clock, so a `--stills` render has the same frame count and duration as one without it. This also fixes a long-standing bug in `--contact-sheet`/`--debug` (since 0.9.0), which stretched every step by ~65–100 ms and drifted subtitle cues and chapter markers with it.
+  **The flag doesn't change the video's length.** Captures happen inside each step's existing hold and the step is paced against a capture-free clock, so a `--stills` render has the same frame count and duration as one without it. (A step with no slack — a long action under almost no narration, or `settleMs: 0` — can still be stretched by its capture; the render warns when that happens.) This also fixes a long-standing bug in `--contact-sheet`/`--debug` (since 0.9.0), which stretched every step by ~65–100 ms and drifted subtitle cues and chapter markers with it.
 
   Re-rendering doesn't churn a docs repo either: a still whose new frame is visually identical to the one on disk (the least-significant-bit differences antialiasing produces between runs) is left untouched.
 
-  New exports: `exportStills`, `stillsEntries`, `stillsDir`, `stillsEquivalent`, and the types `StillsConfig`, `StillEntry`, `StillIndexEntry`, `StillsResult`, `StillsIndexMeta`, `ExportStillsInput`. New optional fields: `RenderOptions.stills`, `ForgeConfig.stills`, and `RenderResult.stills` (the export's outcome — paths written, plus `missing`/`kept`/`pruned` counts).
+  New exports: `exportStills`, `stillsEntries`, `stillsDir`, `stillsEquivalent`, and the types `StillsConfig`, `StillEntry`, `StillIndexEntry`, `StillsResult`, `StillsIndexMeta`, `ExportStillsInput`. New optional fields: `RenderOptions.stills`, `ForgeConfig.stills`, and `RenderResult.stills` (the export's outcome — paths written, plus `missing`/`kept`/`pruned`/`unchanged` counts).
 
+- **The anchored cursor now parks toward a control's lower-right** instead of its centre, so it stops covering the control's own label. This changes the cursor position in any video with a `focus` step, `--stills` or not.
 - **New `Step` fields:** `alt` (still caption override) and `still` (`'before' | 'after' | 'both'`). Both are optional and additive; `ManifestStep` carries them so the export can read them.
 - **`runRecordPhase` now clears `workDir/steps/` at the start of a pass.** A recording pass owns its frames, so leftovers from an earlier run can't be mistaken for current ones by the contact sheet or the stills export. Relevant only if you call `runRecordPhase` directly and accumulated per-step screenshots across passes; the work dir is otherwise internal and is deleted on success anyway.
 
