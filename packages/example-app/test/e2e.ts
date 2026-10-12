@@ -135,7 +135,11 @@ try {
       result.manifest.steps.map((st) => st.narration),
       'index carries each step narration verbatim (the alt text)',
     );
-    assert.equal(index.stills[0].file, `01-${result.manifest.steps[0]!.id}.png`, 'index-prefixed filenames');
+    assert.equal(
+      index.stills[0].file,
+      `${result.manifest.steps[0]!.id}.png`,
+      'stills are named by step id, so a docs link survives inserting a step (#71 §6)',
+    );
     // record.ts pins deviceScaleFactor: 2, so this is exact and machine-independent
     // — asserting >= would pass if the DSF silently dropped to 1.
     assert.deepEqual(
@@ -145,9 +149,17 @@ try {
     );
     const md = readFileSync(stills!.indexMarkdownPath!, 'utf8');
     assert.ok(
-      md.includes(`![${result.manifest.steps[0]!.narration}](01-${result.manifest.steps[0]!.id}.png)`),
+      md.includes(`![${result.manifest.steps[0]!.narration}](${result.manifest.steps[0]!.id}.png)`),
       'markdown index has a paste-ready captioned image',
     );
+    // #71 §1 — the published frame is the pre-action one: a step that clicks
+    // must not publish the screen its click led to.
+    assert.ok(
+      existsSync(join(outDir, 'work', 'steps', `${result.manifest.steps[1]!.id}@before.png`)),
+      'record captured a pre-action frame per step',
+    );
+    // #71 §4 — index.md headings read from the caption, not the raw step id.
+    assert.ok(!md.includes(`## 1. ${result.manifest.steps[0]!.id}`), 'heading is not the bare step id');
     console.log(`e2e OK [stills]: ${stills!.files.length} images + index in ${stills!.dir}`);
   }
 
@@ -700,9 +712,9 @@ try {
     assert.ok(existsSync(contactSheetPath(partialOutput)), 'partial contact sheet emitted on step failure (#20)');
     // #71 — the same bargain for stills: the two steps that completed are exported.
     const partialStills = stillsDir(partialOutput);
-    assert.ok(existsSync(join(partialStills, '01-ok-1.png')), 'partial stills include step 1');
-    assert.ok(existsSync(join(partialStills, '02-ok-2.png')), 'partial stills include step 2');
-    assert.ok(!existsSync(join(partialStills, '03-boom.png')), 'the failed step has no still');
+    assert.ok(existsSync(join(partialStills, 'ok-1.png')), 'partial stills include step 1');
+    assert.ok(existsSync(join(partialStills, 'ok-2.png')), 'partial stills include step 2');
+    assert.ok(!existsSync(join(partialStills, 'boom.png')), 'the failed step has no still');
     const partialIndex = JSON.parse(readFileSync(join(partialStills, 'index.json'), 'utf8'));
     assert.equal(partialIndex.stills.length, 2, 'partial index describes only what was written');
     console.log(`e2e OK [partial-sheet/stills]: ${contactSheetPath(partialOutput)} + ${partialStills}`);
@@ -725,11 +737,54 @@ try {
     }
     assert.ok(selErr instanceof StepError, 'selected partial render still throws StepError');
     const selStills = stillsDir(selOutput);
-    assert.ok(existsSync(join(selStills, '02-ok-2.png')), 'selected completed step exported');
-    assert.ok(!existsSync(join(selStills, '03-boom.png')), 'the failed step has no still');
-    assert.ok(!existsSync(join(selStills, '01-ok-1.png')), 'unselected step not exported');
+    assert.ok(existsSync(join(selStills, 'ok-2.png')), 'selected completed step exported');
+    assert.ok(!existsSync(join(selStills, 'boom.png')), 'the failed step has no still');
+    assert.ok(!existsSync(join(selStills, 'ok-1.png')), 'unselected step not exported');
     console.log(`e2e OK [partial-selected-stills]: ${selStills}`);
   }
+  // #71 §3 — turning --stills on must not change the video. Two renders of the
+  // same one-step tutorial, with and without stills, must agree on frame count
+  // and duration; before 0.14 the settled capture added ~65-100ms per step and
+  // dragged the subtitle cues with it.
+  {
+    const timed = tutorial('Timing parity', [
+      step('A step with a little narration so the hold has slack.', async (page) => {
+        await page.getByRole('link', { name: 'Events' }).first().click();
+      }, { id: 'nav' }),
+      step('A second step, purely narrated.', async () => {}, { id: 'beat' }),
+    ], { id: 'timing-parity' });
+
+    const armFor = async (stills: boolean) => {
+      const out = join(outDir, `parity-${stills ? 'stills' : 'plain'}.mp4`);
+      const r = await render(timed, adapter, {
+        tts: SilentProvider(),
+        output: out,
+        workDir: join(outDir, `work-parity-${stills ? 'stills' : 'plain'}`),
+        ttsCacheDir: join(outDir, 'tts-cache'),
+        cards: false,
+        chapters: false,
+        ...(stills ? { stills: true } : {}),
+      });
+      return { out, totalMs: r.manifest.totalDurationMs, outputMs: r.outputDurationMs };
+    };
+
+    const plain = await armFor(false);
+    const withStills = await armFor(true);
+    const totalDrift = Math.abs(withStills.totalMs - plain.totalMs);
+    const outputDrift = Math.abs(withStills.outputMs - plain.outputMs);
+    assert.ok(
+      totalDrift < 120,
+      `--stills must not lengthen the recording (plain ${plain.totalMs}ms vs stills ${withStills.totalMs}ms)`,
+    );
+    assert.ok(
+      outputDrift < 120,
+      `--stills must not lengthen the output (plain ${plain.outputMs}ms vs stills ${withStills.outputMs}ms)`,
+    );
+    console.log(
+      `e2e OK [stills-timing-parity]: ${plain.totalMs}ms vs ${withStills.totalMs}ms recorded (#71 §3)`,
+    );
+  }
+
   // #71 — a stills export failure must never cost a successful render its MP4.
   // A plain file occupying the stills directory path makes ensureDir throw;
   // the render must warn, carry on through post, and report stills: null.

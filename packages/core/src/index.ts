@@ -46,6 +46,7 @@ export {
   exportStills,
   stillsEntries,
   stillsDir,
+  stillsEquivalent,
   type StillsConfig,
   type StillEntry,
   type StillIndexEntry,
