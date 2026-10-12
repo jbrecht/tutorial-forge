@@ -6,7 +6,7 @@
 import { strict as assert } from 'node:assert';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
@@ -112,6 +112,8 @@ try {
     assert.ok(stills && stills.dir, 'stills directory emitted');
     assert.equal(stills!.dir, stillsDir(output), 'stills land in <name>-stills next to the video');
     assert.equal(stills!.missing.length, 0, 'every step had a frame to export');
+    assert.equal(stills!.kept, 0, 'a fresh export carries nothing forward');
+    assert.equal(stills!.pruned, 0, 'a fresh export has no orphans to remove');
     assert.equal(
       stills!.files.length,
       result.manifest.steps.length,
@@ -211,6 +213,11 @@ try {
     console.log('e2e OK [phase-record-no-tts]: TTS-free contact sheet + stills on a fresh work dir (#50/#71)');
   }
 
+  // #71 — localized stills: per-language directory, translated alt text, and
+  // byte-identical filenames so a docs site can swap directories per locale.
+  // (Per-lang dirs are also what keeps parallel --render-concurrency jobs from
+  // pruning each other's images.)
+
   // Localized render: load the Spanish sidecar the way the CLI would and
   // verify the pipeline produces a Spanish video + subtitles.
   gettingStarted.translations = {
@@ -225,6 +232,7 @@ try {
     ttsCacheDir: join(outDir, 'tts-cache'),
     lang: 'es',
     zoom: true, // exercises the zoom-on-callout filter path
+    stills: true, // #71 — localized stills ride along at no extra render cost
   });
   assert.ok(existsSync(esOutput), 'es output mp4 exists');
   assert.equal(esResult.manifest.lang, 'es', 'manifest records the language');
@@ -239,6 +247,29 @@ try {
     return m ? (+m[1]! * 3600 + +m[2]! * 60 + +m[3]!) * 1000 + +m[4]! : 0;
   })();
   assert.ok(esFirstCueMs >= 3000, `es first subtitle starts after the intro card (got ${esFirstCueMs}ms)`);
+  // #71 — localized stills: own directory, Spanish alt text, same filenames.
+  {
+    const esStills = esResult.stills!;
+    assert.equal(esStills.dir, stillsDir(esOutput), 'es stills get their own directory');
+    assert.ok(esStills.dir!.endsWith('.es-stills'), `per-language stills dir (got ${esStills.dir})`);
+    const esIndex = JSON.parse(readFileSync(esStills.indexJsonPath!, 'utf8'));
+    assert.equal(esIndex.lang, 'es', 'es index records the language');
+    assert.ok(
+      esIndex.stills[0].narration.includes('Bienvenido'),
+      'es alt text is the translated narration',
+    );
+    // Step ids are stable through localization, so filenames match the source
+    // render byte-for-byte — a docs site can swap one directory for another.
+    assert.deepEqual(
+      esIndex.stills.map((e: { file: string }) => e.file),
+      JSON.parse(readFileSync(result.stills!.indexJsonPath!, 'utf8')).stills.map(
+        (e: { file: string }) => e.file,
+      ),
+      'localized stills reuse the source filenames',
+    );
+    console.log(`e2e OK [es-stills]: ${esStills.files.length} images in ${esStills.dir}`);
+  }
+
   console.log(`e2e OK [es]: ${esOutput} (${(esResult.outputDurationMs / 1000).toFixed(1)}s)`);
 
   // Idle speed-up: a tutorial with a long silent wait must come out shorter,
@@ -698,6 +729,32 @@ try {
     assert.ok(!existsSync(join(selStills, '03-boom.png')), 'the failed step has no still');
     assert.ok(!existsSync(join(selStills, '01-ok-1.png')), 'unselected step not exported');
     console.log(`e2e OK [partial-selected-stills]: ${selStills}`);
+  }
+  // #71 — a stills export failure must never cost a successful render its MP4.
+  // A plain file occupying the stills directory path makes ensureDir throw;
+  // the render must warn, carry on through post, and report stills: null.
+  {
+    const oneStep = tutorial('Blocked stills', [
+      step('A single step, so this render is cheap.', async () => {}, { id: 'only' }),
+    ], { id: 'blocked-stills' });
+    const blockedOutput = join(outDir, 'blocked-stills.mp4');
+    // Occupy <name>-stills with a regular file.
+    writeFileSync(stillsDir(blockedOutput), 'I am a file, not a directory');
+
+    const blocked = await render(oneStep, adapter, {
+      tts: SilentProvider(),
+      output: blockedOutput,
+      workDir: join(outDir, 'work-blocked'),
+      ttsCacheDir: join(outDir, 'tts-cache'),
+      cards: false,
+      chapters: false,
+      stills: true,
+    });
+
+    assert.ok(existsSync(blockedOutput), 'render produced the mp4 despite the stills failure');
+    assert.ok(blocked.outputDurationMs > 0, 'the video is real, not a stub');
+    assert.equal(blocked.stills, null, 'stills reported as not exported');
+    console.log('e2e OK [stills-failure-isolated]: mp4 survived a failing stills export');
   }
 } finally {
   await close();

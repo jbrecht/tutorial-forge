@@ -114,22 +114,27 @@ export async function render<S = unknown>(
     // `--phase record` framing check can produce the image set on its own.
     let stills: StillsResult | null = null;
     if (wantStills && (phase === 'all' || phase === 'record')) {
-      stills = await exportStills(
-        stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds),
-        stillsDir(output),
-        { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
-        stillsConfig,
-      );
-      if (stills.dir) {
+      stills = await exportDocumentationStills({
+        entries: stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds),
+        outDir: stillsDir(output),
+        meta: { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
+        config: stillsConfig,
+        tutorialStepIds,
+      });
+      if (stills?.dir) {
+        const extra = [
+          stills.kept ? `${stills.kept} kept` : '',
+          stills.pruned ? `${stills.pruned} orphan(s) removed` : '',
+        ].filter(Boolean);
         logger.info(
           `stills: ${stills.files.length} image(s) in ${stills.dir}` +
-            (stills.pruned ? ` (replaced ${stills.pruned} from a previous export)` : ''),
+            (extra.length ? ` (${extra.join(', ')})` : ''),
         );
-      } else {
-        logger.warn('stills: no step screenshots found to export');
+      } else if (stills) {
+        logger.warn('stills: nothing exported — no frames from this recording pass');
       }
-      if (stills.missing.length) {
-        logger.warn(`stills: no screenshot for step(s) ${stills.missing.join(', ')}`);
+      if (stills?.missing.length) {
+        logger.warn(`stills: no frame for step(s) ${stills.missing.join(', ')}`);
       }
     }
 
@@ -205,6 +210,23 @@ async function emitFailureContactSheet(
   }
 }
 
+/**
+ * The success-path stills export, wrapped. A stills failure (a file occupying
+ * the stills path, a read-only output dir, a full disk) must never cost a
+ * successful recording its MP4 — this is a documentation side-artifact, and
+ * `runPostPhase` has not run yet at the call site. Warns and returns null.
+ */
+async function exportDocumentationStills(input: Parameters<typeof exportStills>[0]): Promise<StillsResult | null> {
+  try {
+    return await exportStills(input);
+  } catch (err) {
+    logger.warn(
+      `stills: export failed, continuing with the render — ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
+  }
+}
+
 /** Best-effort stills export for a failed render. Never throws — diagnostics must not mask the StepError. */
 async function emitPartialStills(
   workDir: string,
@@ -217,14 +239,15 @@ async function emitPartialStills(
 ): Promise<void> {
   try {
     const manifest = await loadManifest(workDir); // completed steps only
-    const result = await exportStills(
+    const result = await exportStills({
       // Selection and numbering resolve against the full tutorial, so a
       // selection naming a step that never ran still exports the ones that did.
-      stillsEntries(manifest, workDir, config.steps, tutorialStepIds),
-      stillsDir(output),
-      { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
+      entries: stillsEntries(manifest, workDir, config.steps, tutorialStepIds),
+      outDir: stillsDir(output),
+      meta: { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
       config,
-    );
+      tutorialStepIds,
+    });
     if (result.dir) logger.info(`stills (partial, through failure): ${result.files.length} image(s) in ${result.dir}`);
   } catch (stillsErr) {
     logger.warn(`partial stills skipped: ${stillsErr instanceof Error ? stillsErr.message : stillsErr}`);

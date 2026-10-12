@@ -12,7 +12,7 @@ import { CURSOR_INIT_SCRIPT } from '../browser/cursor.js';
 import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
 import { RecordingClock, stepHoldUntilMs } from '../browser/timing.js';
 import { instrumentPage } from '../browser/instrument.js';
-import { ensureDir } from '../util/fs.js';
+import { ensureDir, removeDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
 
 export const RAW_VIDEO_FILE = 'raw.webm';
@@ -55,6 +55,11 @@ export async function runRecordPhase<S = unknown>(
   opts: RecordPhaseOptions,
 ): Promise<TimingManifest> {
   await ensureDir(opts.workDir);
+  // A recording pass owns its frames. Work dirs are reused (`.forge/<id>` by
+  // default), so leftovers from an earlier run would otherwise survive here —
+  // and a later consumer (contact sheet, stills export) could publish a stale
+  // screenshot for a step that didn't run this time.
+  await removeDir(join(opts.workDir, 'steps'));
   const recorder = createRecorder(opts.recorder ?? 'video', {
     workDir: opts.workDir,
     viewport: opts.viewport,
