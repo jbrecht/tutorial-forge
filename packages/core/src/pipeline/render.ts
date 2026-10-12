@@ -7,7 +7,14 @@ import { runTTSPhase, loadTTSResult, loadTTSResultIfPresent, silentTTSResult } f
 import { runRecordPhase, loadManifest } from './record.js';
 import { runPostPhase, type PostPhaseResult } from './post.js';
 import { renderContactSheet, contactSheetEntries, contactSheetPath } from './contact-sheet.js';
-import { exportStills, stillsEntries, stillsDir, validateStillsSelection, type StillsResult } from './stills.js';
+import {
+  exportStills,
+  stillsEntries,
+  stillsDir,
+  validateStillsSelection,
+  type StillsConfig,
+  type StillsResult,
+} from './stills.js';
 import { defaultCacheDir } from '../tts/cache.js';
 import { ensureDir, removeDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
@@ -96,7 +103,14 @@ export async function render<S = unknown>(
             lang,
             recorder: options.recorder,
             debug: options.debug,
-            screenshots: wantContactSheet || wantStills || options.debug,
+            screenshots: wantContactSheet || options.debug,
+            stills: wantStills
+              ? {
+                  capture: stillsConfig.capture ?? 'before',
+                  crop: stillsConfig.crop === 'target',
+                  cropPaddingPx: stillsConfig.cropPaddingPx ?? 24,
+                }
+              : undefined,
           })
         : await loadManifest(workDir);
 
@@ -115,7 +129,7 @@ export async function render<S = unknown>(
     let stills: StillsResult | null = null;
     if (wantStills && (phase === 'all' || phase === 'record')) {
       stills = await exportDocumentationStills({
-        entries: stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds),
+        entries: stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds, stillsConfig),
         outDir: stillsDir(output),
         meta: { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
         config: stillsConfig,
@@ -123,6 +137,7 @@ export async function render<S = unknown>(
       });
       if (stills?.dir) {
         const extra = [
+          stills.unchanged ? `${stills.unchanged} unchanged` : '',
           stills.kept ? `${stills.kept} kept` : '',
           stills.pruned ? `${stills.pruned} orphan(s) removed` : '',
         ].filter(Boolean);
@@ -235,14 +250,14 @@ async function emitPartialStills(
   tutorialStepIds: string[],
   lang: string | undefined,
   viewport: { width: number; height: number },
-  config: { steps?: string; markdown?: boolean },
+  config: StillsConfig,
 ): Promise<void> {
   try {
     const manifest = await loadManifest(workDir); // completed steps only
     const result = await exportStills({
       // Selection and numbering resolve against the full tutorial, so a
       // selection naming a step that never ran still exports the ones that did.
-      entries: stillsEntries(manifest, workDir, config.steps, tutorialStepIds),
+      entries: stillsEntries(manifest, workDir, config.steps, tutorialStepIds, config),
       outDir: stillsDir(output),
       meta: { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
       config,

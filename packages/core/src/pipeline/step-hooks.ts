@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import type { Step, StepContext, Tutorial, TutorialAdapter } from '../types.js';
 import { logger } from '../util/logger.js';
 
@@ -81,12 +81,30 @@ export async function runTeardownChain<S>(
  * hover. The focus callback may be sync or async. Never throws — a failure
  * here is logged and skipped, so the render is unaffected.
  */
-export async function anchorFocus<S>(step: Step<S>, page: Page, ctx: StepContext<S>, id: string): Promise<void> {
-  if (!step.focus) return;
+export async function anchorFocus<S>(
+  step: Step<S>,
+  page: Page,
+  ctx: StepContext<S>,
+  id: string,
+): Promise<Locator | null> {
+  if (!step.focus) return null;
   try {
     const locator = await step.focus(page, ctx);
-    await locator.hover();
+    // Park the cursor toward the control's lower-right rather than dead centre:
+    // the arrow is drawn down-right of its hotspot, so a centred cursor covers
+    // the control's own label (#71 §2 — "Acc▶pt"). Still unambiguously on the
+    // control, and it reads better in the video too.
+    const box = await locator.boundingBox().catch(() => null);
+    if (box) {
+      await locator.hover({
+        position: { x: Math.min(box.width - 2, box.width * 0.78), y: Math.min(box.height - 2, box.height * 0.72) },
+      });
+    } else {
+      await locator.hover();
+    }
+    return locator;
   } catch (err) {
     logger.debug(`focus anchor skipped for "${id}": ${err instanceof Error ? err.message : err}`);
+    return null;
   }
 }
