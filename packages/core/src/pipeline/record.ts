@@ -13,6 +13,7 @@ import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
 import { RecordingClock, stepHoldUntilMs } from '../browser/timing.js';
 import { instrumentPage } from '../browser/instrument.js';
 import { ensureDir, removeDir } from '../util/fs.js';
+import { fileSafeId } from './stills.js';
 import { logger } from '../util/logger.js';
 
 export const RAW_VIDEO_FILE = 'raw.webm';
@@ -27,6 +28,10 @@ const FINAL_HOLD_MS = 1000;
  * capture cost is ~65-100ms, so this leaves healthy margin.
  */
 const STILL_SHOT_BUDGET_MS = 300;
+/** The callout ring self-removes this long after a click; a settled frame must be later. */
+const CALLOUT_CLEAR_MS = 250;
+/** Overrun past the hold that's worth telling the author about. */
+const STILL_OVERRUN_WARN_MS = 20;
 /** Gap after the flash before setup, so the trim point can't land in the flash. */
 const POST_FLASH_HOLD_MS = 400;
 
@@ -188,15 +193,18 @@ export async function runRecordPhase<S = unknown>(
       // action window when pacing, so enabling stills can't lengthen the step
       // (#71 §3) — the hold absorbs it instead.
       let captureOverheadMs = 0;
+      // Hoisted: the settled capture crops against the same target as the
+      // pre-action one, so a cropped set isn't half full-frame.
+      let focusTarget: Locator | null = null;
       try {
         // Anchor the cursor on the step's focus control before its own action,
         // so narration about "this control" has a visual focus (#10).
-        const focusTarget = await anchorFocus(step, instrumented as Page, ctx, id);
+        focusTarget = await anchorFocus(step, instrumented as Page, ctx, id);
         if (wantsBefore(step, opts)) {
           const t0 = clock.now();
           // The pre-action frame (#71 §1): the control is still on screen with
           // the cursor on it, which is what a "click this" screenshot needs.
-          await captureStill(page, opts.workDir, `${id}@before`, focusTarget, opts);
+          await captureStill(page, opts.workDir, `${fileSafeId(id)}@before`, focusTarget, opts);
           captureOverheadMs += clock.now() - t0;
         }
         await step.run(instrumented as Page, ctx);
@@ -228,12 +236,25 @@ export async function runRecordPhase<S = unknown>(
       // then wait out whatever is left, so the step still ends at holdUntil.
       const wantSettled = opts.screenshots || wantsAfter(step, opts);
       if (wantSettled) {
-        const untilShot = holdUntil - STILL_SHOT_BUDGET_MS - clock.now();
+        // Shoot as early as the frame is actually settled (the callout ring is
+        // gone ~200ms after the action), not at a fixed offset from the end —
+        // that maximises the slack left to absorb a slow capture.
+        const settledAt = actionEndMs + Math.min(step.settleMs ?? 400, CALLOUT_CLEAR_MS);
+        const shotAt = Math.min(holdUntil - STILL_SHOT_BUDGET_MS, Math.max(settledAt, holdUntil - STILL_SHOT_BUDGET_MS));
+        const untilShot = Math.max(settledAt, shotAt) - clock.now();
         if (untilShot > 0) await page.waitForTimeout(untilShot);
-        await captureStill(page, opts.workDir, id, null, opts);
+        await captureStill(page, opts.workDir, fileSafeId(id), focusTarget, opts);
       }
       const remaining = holdUntil - clock.now();
       if (remaining > 0) await page.waitForTimeout(remaining);
+      else if (wantSettled && remaining < -STILL_OVERRUN_WARN_MS) {
+        // The capture didn't fit in this step's hold, so it lengthened the
+        // recording. Say so: silent drift is what made this a bug the first time.
+        logger.warn(
+          `stills: step "${id}" had no hold slack — its capture added ~${Math.round(-remaining)}ms to the video. ` +
+            'Give the step a longer settleMs (or narration) to absorb it.',
+        );
+      }
 
       manifestSteps.push({
         id,
@@ -351,14 +372,15 @@ function wantsAfter(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolea
 }
 
 /**
- * Freeze animation while the shot is taken. Two reasons: a mid-flight
- * transition makes the frame non-reproducible (#71 §5 — re-renders differed in
- * bytes while being visually identical), and a blinking caret does the same.
- * Applied only for the duration of the screenshot, during the step's hold.
+ * Applied for the duration of a still capture only. Deliberately minimal: the
+ * capture now happens *inside* the recorded hold, and Playwright's `style`
+ * option really does inject a <style> tag into the live page, so anything more
+ * aggressive (pausing animations, killing transitions) would show up in the
+ * video as a 2-3 frame stutter. Hiding the caret is safe — it blinks anyway —
+ * and removes the one source of frame-to-frame churn worth removing; the rest
+ * of #71 §5 is handled by comparing pixels on export rather than by freezing.
  */
-const STILL_FREEZE_CSS =
-  '*,*::before,*::after{animation-play-state:paused!important;' +
-  'animation-delay:0s!important;transition:none!important;caret-color:transparent!important}';
+const STILL_FREEZE_CSS = '*,*::before,*::after{caret-color:transparent!important}';
 
 /**
  * Capture a still. `target`, when given and cropping is on, clips to that
@@ -377,8 +399,10 @@ async function captureStill(
     const path = join(workDir, 'steps', `${name}.png`);
     const clip = opts.stills?.crop ? await cropBox(page, target, opts.stills.cropPaddingPx) : undefined;
     await page.screenshot({ path, style: STILL_FREEZE_CSS, ...(clip ? { clip } : {}) });
-  } catch {
-    /* never let diagnostics break the render */
+  } catch (err) {
+    // Never fail the render over a still, but don't hide the cause either —
+    // it surfaces otherwise only as an unexplained "no frame for step X".
+    logger.warn(`stills: capture failed for "${name}": ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -392,11 +416,19 @@ async function cropBox(
   try {
     const box = await target.boundingBox();
     if (!box) return undefined;
+    if (box.width <= 0 || box.height <= 0) return undefined;
     const view = page.viewportSize();
+    // An element scrolled out of the viewport would otherwise clamp to a clip
+    // over the wrong region (or a 1px one Playwright rejects) — fall back to
+    // the full frame, which is at least correct.
+    if (view && (box.x >= view.width || box.y >= view.height || box.x + box.width <= 0 || box.y + box.height <= 0)) {
+      return undefined;
+    }
     const x = Math.max(0, box.x - paddingPx);
     const y = Math.max(0, box.y - paddingPx);
     const maxW = view ? view.width - x : box.width + paddingPx * 2;
     const maxH = view ? view.height - y : box.height + paddingPx * 2;
+    if (maxW <= 0 || maxH <= 0) return undefined;
     return {
       x,
       y,

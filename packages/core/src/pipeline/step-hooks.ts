@@ -15,6 +15,12 @@ export type TeardownThunk = () => unknown | Promise<unknown>;
 export const SETTLE_TIMEOUT_MS = 5000;
 
 /**
+ * Cap on the off-centre focus hover. Without it a point that another element
+ * covers burns the full 30s action timeout — inside the recorded step.
+ */
+export const FOCUS_HOVER_TIMEOUT_MS = 2000;
+
+/**
  * Wait for a real load-state signal (step.settleUntil) instead of a fixed
  * settleMs guess — e.g. 'networkidle' to let a router.refresh()'s fetches
  * quiesce (#14). Best-effort: bounded and never throws, so a page that never
@@ -95,10 +101,17 @@ export async function anchorFocus<S>(
     // the control's own label (#71 §2 — "Acc▶pt"). Still unambiguously on the
     // control, and it reads better in the video too.
     const box = await locator.boundingBox().catch(() => null);
-    if (box) {
-      await locator.hover({
-        position: { x: Math.min(box.width - 2, box.width * 0.78), y: Math.min(box.height - 2, box.height * 0.72) },
-      });
+    // Only offset when the control is big enough for it to mean anything; on a
+    // tiny or hairline box the computed point can fall outside the element,
+    // which Playwright retries for the full action timeout before failing.
+    if (box && box.width >= 12 && box.height >= 12) {
+      const position = {
+        x: Math.max(1, Math.min(box.width - 2, box.width * 0.78)),
+        y: Math.max(1, Math.min(box.height - 2, box.height * 0.72)),
+      };
+      // Fall back to a plain centre hover rather than losing the anchor (and,
+      // with it, the crop target) if the offset point isn't hittable.
+      await locator.hover({ position, timeout: FOCUS_HOVER_TIMEOUT_MS }).catch(() => locator.hover());
     } else {
       await locator.hover();
     }
