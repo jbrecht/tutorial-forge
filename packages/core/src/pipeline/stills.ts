@@ -1,5 +1,5 @@
 import { join, dirname, basename, extname } from 'node:path';
-import { copyFile, writeFile, open as openFile, readdir, unlink } from 'node:fs/promises';
+import { copyFile, writeFile, readFile, open as openFile, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { TimingManifest } from '../types.js';
 import { ensureDir, exists } from '../util/fs.js';
@@ -43,38 +43,48 @@ export interface StillEntry {
   source: string;
   /** Basename written into the stills dir, e.g. "03-set-status.png". */
   file: string;
+  /**
+   * Whether *this* recording pass produced a frame for the step. Work dirs are
+   * reused and record never clears `steps/`, so a file at `source` may be a
+   * leftover from an earlier, successful run — exporting that as current would
+   * silently publish a stale screenshot. Only manifest-backed steps count.
+   */
+  recorded: boolean;
 }
 
-/** Files this phase owns in the stills dir, and will replace on re-export. */
-const GENERATED_PNG_RE = /^\d+-.+\.png$/;
+/** One still as recorded in a written index.json. */
+export interface StillIndexEntry {
+  index: number;
+  id: string;
+  file: string;
+  narration: string;
+}
 
 /**
- * Clear stills from a previous export so the directory always matches the
- * index beside it. Without this, renaming a step leaves an orphaned
- * `NN-old-id.png` behind forever, and exporting a subset over a full set
- * leaves images the fresh index.json doesn't list — both of which matter
- * because the advertised use case is committing this directory to a docs repo.
- *
- * Scoped deliberately: only `NN-*.png` names this phase itself generates, in
- * a directory it created. Anything else an author put there is left alone.
- * Best-effort — a removal failure must not fail the export.
+ * Read the index.json a previous export left behind. It is the authority on
+ * which files this phase owns: a name-shape regex would also match an author's
+ * own `03-save-annotated.png` or `2024-logo.png`, and deleting those is
+ * unacceptable when the advertised workflow is committing this directory to a
+ * docs repo. Returns [] when there is no readable previous index, which makes
+ * the export purely additive — the safe direction.
  */
-async function pruneStaleStills(outDir: string): Promise<number> {
-  let removed = 0;
+async function readPreviousIndex(outDir: string): Promise<StillIndexEntry[]> {
   try {
-    for (const name of await readdir(outDir)) {
-      if (!GENERATED_PNG_RE.test(name)) continue;
-      try {
-        await unlink(join(outDir, name));
-        removed++;
-      } catch {
-        /* best effort */
-      }
-    }
+    const raw = await readFile(join(outDir, 'index.json'), 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    const stills = (parsed as { stills?: unknown }).stills;
+    if (!Array.isArray(stills)) return [];
+    return stills.filter(
+      (e): e is StillIndexEntry =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as StillIndexEntry).file === 'string' &&
+        typeof (e as StillIndexEntry).id === 'string' &&
+        typeof (e as StillIndexEntry).index === 'number',
+    );
   } catch {
-    /* dir doesn't exist yet — nothing to prune */
+    return [];
   }
-  return removed;
 }
 
 export interface StillsResult {
@@ -84,9 +94,15 @@ export interface StillsResult {
   files: string[];
   indexJsonPath: string | null;
   indexMarkdownPath: string | null;
-  /** Step ids whose screenshot was missing (e.g. steps after a failure). */
+  /** Step ids with no frame from this recording pass (e.g. steps after a failure). */
   missing: string[];
-  /** Images from a previous export that were replaced. */
+  /**
+   * Stills carried forward from a previous export: still part of the tutorial,
+   * outside this run's selection, and left in place so regenerating one step
+   * doesn't discard the rest.
+   */
+  kept: number;
+  /** Orphans deleted — previously-indexed stills whose step no longer exists. */
   pruned: number;
 }
 
@@ -103,7 +119,20 @@ export function stillsDir(output: string): string {
  */
 export function stillFileName(index: number, id: string, totalSteps: number): string {
   const width = Math.max(2, String(totalSteps).length);
-  return `${String(index).padStart(width, '0')}-${id}.png`;
+  return `${String(index).padStart(width, '0')}-${fileSafeId(id)}.png`;
+}
+
+/**
+ * Step ids are only checked for uniqueness, not shape (`validateTutorial`
+ * slug-checks the *tutorial* id), so an id can carry spaces, `#`, `?`, or even
+ * path separators. Those would produce a broken markdown image link and, for
+ * `../`, a copy outside the stills directory — so collapse anything outside a
+ * filename-safe set. Slug-shaped ids (the overwhelming majority) pass through
+ * unchanged.
+ */
+export function fileSafeId(id: string): string {
+  const safe = id.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '');
+  return safe || 'step';
 }
 
 /**
@@ -135,6 +164,12 @@ export function selectStillStepIds(stepIds: string[], tutorialId: string, steps?
     const to = indexOf(toId!);
     if (to < from) throw new Error(`--stills-steps range "${spec}" runs backwards`);
     for (let i = from; i <= to; i++) picked.add(i);
+  }
+  // A selection that resolves to nothing (e.g. "," or " , ") would otherwise
+  // export zero images and report it as "no frames found", blaming the
+  // recording for a malformed selection. Fail like any other bad selection.
+  if (picked.size === 0) {
+    throw new Error(`--stills-steps "${steps}" selected no steps (steps: ${stepIds.join(', ')})`);
   }
   return [...picked].sort((a, b) => a - b);
 }
@@ -175,18 +210,19 @@ export function stillsEntries(
   tutorialStepIds: string[] = manifest.steps.map((s) => s.id),
 ): StillEntry[] {
   const total = tutorialStepIds.length;
-  const narrationById = new Map(manifest.steps.map((s) => [s.id, s.narration]));
+  const recordedById = new Map(manifest.steps.map((s) => [s.id, s.narration]));
   return selectStillStepIds(tutorialStepIds, manifest.tutorialId, steps).map((i) => {
     const id = tutorialStepIds[i]!;
+    const recorded = recordedById.has(id);
     return {
       index: i + 1,
       id,
-      // A selected step that never recorded has no narration; its frame is
-      // absent too, so exportStills reports it in `missing` and it never
-      // reaches the index.
-      narration: narrationById.get(id) ?? '',
+      narration: recordedById.get(id) ?? '',
       source: join(workDir, 'steps', `${id}.png`),
       file: stillFileName(i + 1, id, total),
+      // A step absent from the manifest did not record in this pass; any file
+      // sitting at `source` is a leftover from an earlier run.
+      recorded,
     };
   });
 }
@@ -239,7 +275,7 @@ export async function pngSize(file: string): Promise<{ width: number; height: nu
  * commits its stills should see a diff only when an image or its narration
  * actually changed, not on every re-render.
  */
-export function stillsIndexJson(entries: StillEntry[], meta: StillsIndexMeta): string {
+export function stillsIndexJson(entries: StillIndexEntry[], meta: StillsIndexMeta): string {
   return (
     JSON.stringify(
       {
@@ -272,7 +308,7 @@ function altText(narration: string, id: string): string {
  * Paste-ready markdown: one captioned image per step, referenced by basename
  * so the file works as-is inside the stills directory.
  */
-export function stillsIndexMarkdown(entries: StillEntry[], meta: StillsIndexMeta): string {
+export function stillsIndexMarkdown(entries: StillIndexEntry[], meta: StillsIndexMeta): string {
   const heading = meta.title ?? meta.tutorialId;
   const lines = [
     `# ${heading} — screenshots`,
@@ -282,7 +318,14 @@ export function stillsIndexMarkdown(entries: StillEntry[], meta: StillsIndexMeta
     '',
   ];
   for (const e of entries) {
-    lines.push(`## ${e.index}. ${e.id}`, '', `![${altText(e.narration, e.id)}](${e.file})`, '');
+    // encodeURI as belt-and-braces: fileSafeId already removes the characters
+    // that would break a markdown link, but the href should survive either way.
+    lines.push(
+      `## ${e.index}. ${e.id}`,
+      '',
+      `![${altText(e.narration, e.id)}](${encodeURI(e.file)})`,
+      '',
+    );
   }
   return lines.join('\n');
 }
@@ -293,24 +336,67 @@ export function stillsIndexMarkdown(entries: StillEntry[], meta: StillsIndexMeta
  * on a failed render the completed steps still have frames on disk, and
  * exporting those is exactly when an author wants them.
  */
-export async function exportStills(
-  entries: StillEntry[],
-  outDir: string,
-  meta: StillsIndexMeta,
-  config: StillsConfig = {},
-): Promise<StillsResult> {
+export interface ExportStillsInput {
+  entries: StillEntry[];
+  outDir: string;
+  meta: StillsIndexMeta;
+  config?: StillsConfig;
+  /**
+   * Every step id in the tutorial. Used to tell a still that is merely outside
+   * this run's selection (keep it) from one whose step no longer exists at all
+   * (an orphan to delete). Defaults to the entries' own ids, which makes a
+   * subset export purely additive.
+   */
+  tutorialStepIds?: string[];
+}
+
+/**
+ * Copy the selected stills into outDir and write the indexes.
+ *
+ * Three behaviors worth knowing:
+ *
+ * - **Missing frames are reported, not fatal.** On a failed render the
+ *   completed steps still have frames on disk, and exporting those is exactly
+ *   when an author wants them. A step with no frame *from this pass* lands in
+ *   `missing` and never reaches the index, so there are no broken links.
+ * - **Re-export merges.** Stills for steps outside this run's selection are
+ *   left in place and folded into the index, so regenerating one changed step
+ *   doesn't discard the other eleven.
+ * - **Pruning is index-driven.** Only stills the previous index.json listed,
+ *   whose step has since left the tutorial, are deleted. An author's own files
+ *   in this directory are never touched.
+ */
+export async function exportStills(input: ExportStillsInput): Promise<StillsResult> {
+  const { entries, outDir, meta } = input;
+  const config = input.config ?? {};
+  const wantMarkdown = config.markdown ?? DEFAULT_STILLS.markdown;
+
   const present: StillEntry[] = [];
   const missing: string[] = [];
   for (const e of entries) {
-    if (await exists(e.source)) present.push(e);
+    // `recorded` first: a file at `source` can be a leftover from an earlier
+    // run of a reused work dir, and publishing that as current would be a
+    // silently stale screenshot.
+    if (e.recorded && (await exists(e.source))) present.push(e);
     else missing.push(e.id);
   }
   if (present.length === 0) {
-    return { dir: null, files: [], indexJsonPath: null, indexMarkdownPath: null, missing, pruned: 0 };
+    // Nothing to publish — leave any previous export untouched rather than
+    // emptying a directory the author may have committed.
+    return {
+      dir: null,
+      files: [],
+      indexJsonPath: null,
+      indexMarkdownPath: null,
+      missing,
+      kept: 0,
+      pruned: 0,
+    };
   }
 
   await ensureDir(outDir);
-  const pruned = await pruneStaleStills(outDir);
+  const previous = await readPreviousIndex(outDir);
+
   const files: string[] = [];
   for (const e of present) {
     const dest = join(outDir, e.file);
@@ -318,18 +404,53 @@ export async function exportStills(
     files.push(dest);
   }
 
-  // Stamp the real pixel dimensions (DSF-dependent) from what we just wrote.
+  // Reconcile against the previous export.
+  const freshIds = new Set(present.map((e) => e.id));
+  const tutorialIds = new Set(input.tutorialStepIds ?? entries.map((e) => e.id));
+  const carried: StillIndexEntry[] = [];
+  let pruned = 0;
+  for (const p of previous) {
+    if (freshIds.has(p.id)) continue; // just rewritten
+    if (!tutorialIds.has(p.id)) {
+      // The step is gone from the tutorial — its still is an orphan.
+      try {
+        await unlink(join(outDir, p.file));
+        pruned++;
+      } catch {
+        /* already gone; nothing to prune */
+      }
+      continue;
+    }
+    // Still a real step, just not in this selection: keep it if it's on disk.
+    if (await exists(join(outDir, p.file))) carried.push(p);
+  }
+
+  // Stamp the real pixel dimensions from what we just wrote.
   const pixelSize = (await pngSize(files[0]!)) ?? meta.pixelSize;
   const indexMeta: StillsIndexMeta = { ...meta, pixelSize };
 
-  const indexJsonPath = join(outDir, 'index.json');
-  await writeFile(indexJsonPath, stillsIndexJson(present, indexMeta));
+  const indexed: StillIndexEntry[] = [
+    ...present.map((e) => ({ index: e.index, id: e.id, file: e.file, narration: e.narration })),
+    ...carried,
+  ].sort((a, b) => a.index - b.index);
 
+  const indexJsonPath = join(outDir, 'index.json');
+  await writeFile(indexJsonPath, stillsIndexJson(indexed, indexMeta));
+
+  const markdownPath = join(outDir, 'index.md');
   let indexMarkdownPath: string | null = null;
-  if (config.markdown ?? DEFAULT_STILLS.markdown) {
-    indexMarkdownPath = join(outDir, 'index.md');
-    await writeFile(indexMarkdownPath, stillsIndexMarkdown(present, indexMeta));
+  if (wantMarkdown) {
+    indexMarkdownPath = markdownPath;
+    await writeFile(markdownPath, stillsIndexMarkdown(indexed, indexMeta));
+  } else {
+    // A stale index.md from an earlier run would list pruned filenames — the
+    // broken-link state this reconciliation exists to prevent.
+    try {
+      await unlink(markdownPath);
+    } catch {
+      /* nothing to remove */
+    }
   }
 
-  return { dir: outDir, files, indexJsonPath, indexMarkdownPath, missing, pruned };
+  return { dir: outDir, files, indexJsonPath, indexMarkdownPath, missing, kept: carried.length, pruned };
 }

@@ -205,7 +205,7 @@ tutorial-forge render --only my-tutorial --stills
 #   dist/my-tutorial-stills/index.md
 ```
 
-Each PNG is index-prefixed with its step id, so a directory listing reads in tutorial order. The prefix comes from the step's position in the *tutorial*, not in your selection — `03-save.png` is `03-save.png` whether you exported the whole set or just that one step.
+Each PNG is index-prefixed with its step id, so a directory listing reads in tutorial order. Characters that would break a filename or a markdown link (spaces, `#`, `?`, path separators) are collapsed to `-`, so a step id like `save draft` yields `01-save-draft.png`. The prefix comes from the step's position in the *tutorial*, not in your selection — `03-save.png` is `03-save.png` whether you exported the whole set or just that one step.
 
 **The index is the point.** Your narration is already the caption, so `index.md` is paste-ready markdown with alt text filled in:
 
@@ -215,9 +215,11 @@ Each PNG is index-prefixed with its step id, so a directory listing reads in tut
 ![Click Create event. Saving takes a moment, and the new event appears in the list as a draft.](03-save.png)
 ```
 
-`index.json` carries the same data for a docs pipeline to consume: `tutorialId`, the CSS `viewport`, the actual `pixelSize`, and per-still `index`/`id`/`file`/`narration` — plus `title` and `lang` when the tutorial has them. It is written without a timestamp, so a docs repo that commits its stills only sees a diff when an image or its narration actually changed.
+`index.json` carries the same data for a docs pipeline to consume: `tutorialId`, the CSS `viewport`, the actual `pixelSize`, and per-still `index`/`id`/`file`/`narration` — plus `title` and `lang` when the tutorial has them. A localized render (`--lang es`) writes its own `<id>.es-stills/` directory with translated alt text and the *same* filenames, so a docs site can swap one directory for another per locale. It is written without a timestamp, so a docs repo that commits its stills only sees a diff when an image or its narration actually changed.
 
-Re-exporting replaces the previous set: stills from an earlier run (a renamed step, or a wider selection) are cleared first, so the directory always matches the index next to it. Only the `NN-*.png` files tutorial-forge generates are touched — anything else you keep in that directory stays.
+**Re-exporting merges.** Regenerating one changed step (`--stills-steps save`) rewrites that still, leaves the rest in place, and rebuilds the index to cover everything present — so you don't lose eleven good images to fix one. A still whose step has left the tutorial entirely is removed, since the index would otherwise point at a file no step owns.
+
+Pruning is driven by the previous `index.json`, not by filename shape, so files tutorial-forge didn't write are never touched: annotate a still as `03-save-annotated.png`, drop in `2024-release.png`, keep your own `notes.md` — all safe.
 
 ### Only the frames you want
 
@@ -255,9 +257,11 @@ That is the fastest way to use tutorial-forge purely as a screenshot generator �
 - **No callout ring.** The click highlight fades ~200ms after the action, long before the settled frame.
 - **No zoom.** `--zoom` is applied later as a video filter, so stills are always the full viewport.
 - **Exactly 2× the CSS viewport** — 3840×2160 for the default 1920×1080 render. That comes from the recording context's `deviceScaleFactor: 2`, a browser emulation setting rather than a property of your display, so you get the same dimensions on a retina laptop and a headless CI box. `index.json` records it as `pixelSize`, so you can safely hardcode dimensions in your docs. (It also means ~100KB per frame — downscale in your docs pipeline if that matters.)
-- **A screenshot per step is taken inside the recording window**, so a `--stills` render is very slightly longer than the same render without it. Timings stay self-consistent (the frame is captured before the step's end is stamped); it is the same cost `--contact-sheet` and `--debug` already pay.
+- **A screenshot per step is taken inside the recording window**, so a `--stills` render is measurably (not perceptibly) different from the same render without it: about 97ms per step, which works out to ~1.2% longer and ~7% larger on a 65-second render. Timings stay self-consistent — the frame is captured before the step's end is stamped, so there is no audio or subtitle drift — and it is the same cost `--contact-sheet` and `--debug` have always paid.
 
-If a step fails mid-render you still get the stills for every step that completed — including when you passed `--stills-steps` spanning the step that failed — and the index describes only what was written, so there are no broken image links.
+If a step fails mid-render you still get the stills for every step that completed — including when you passed `--stills-steps` spanning the step that failed — and the index describes only what was written, so there are no broken image links. Only frames from *that* recording pass are published: a reused work dir cannot leak a stale screenshot from an earlier run into a later export.
+
+A stills export is never allowed to cost you the video. If writing the directory fails (a file in the way, a read-only output path, a full disk) the render logs a warning and carries on to produce the MP4.
 
 ## Timing manifest
 

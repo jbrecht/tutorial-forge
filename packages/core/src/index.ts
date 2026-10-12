@@ -48,8 +48,10 @@ export {
   stillsDir,
   type StillsConfig,
   type StillEntry,
+  type StillIndexEntry,
   type StillsResult,
   type StillsIndexMeta,
+  type ExportStillsInput,
 } from './pipeline/stills.js';
 export { previewStep, type PreviewOptions, type PreviewResult } from './pipeline/preview.js';
 export { probeAdapterSetup } from './pipeline/preflight.js';
