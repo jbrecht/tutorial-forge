@@ -1,4 +1,4 @@
-import type { Locator, Page } from 'playwright';
+import type { Page } from 'playwright';
 import type { Step, StepContext, Tutorial, TutorialAdapter } from '../types.js';
 import { logger } from '../util/logger.js';
 
@@ -13,12 +13,6 @@ export type TeardownThunk = () => unknown | Promise<unknown>;
 
 /** Cap on a step's settleUntil wait — bounded so a never-idle page (websockets, polling) can't stall the render. */
 export const SETTLE_TIMEOUT_MS = 5000;
-
-/**
- * Cap on the off-centre focus hover. Without it a point that another element
- * covers burns the full 30s action timeout — inside the recorded step.
- */
-export const FOCUS_HOVER_TIMEOUT_MS = 2000;
 
 /**
  * Wait for a real load-state signal (step.settleUntil) instead of a fixed
@@ -87,37 +81,12 @@ export async function runTeardownChain<S>(
  * hover. The focus callback may be sync or async. Never throws — a failure
  * here is logged and skipped, so the render is unaffected.
  */
-export async function anchorFocus<S>(
-  step: Step<S>,
-  page: Page,
-  ctx: StepContext<S>,
-  id: string,
-): Promise<Locator | null> {
-  if (!step.focus) return null;
+export async function anchorFocus<S>(step: Step<S>, page: Page, ctx: StepContext<S>, id: string): Promise<void> {
+  if (!step.focus) return;
   try {
     const locator = await step.focus(page, ctx);
-    // Park the cursor toward the control's lower-right rather than dead centre:
-    // the arrow is drawn down-right of its hotspot, so a centred cursor covers
-    // the control's own label (#71 §2 — "Acc▶pt"). Still unambiguously on the
-    // control, and it reads better in the video too.
-    const box = await locator.boundingBox().catch(() => null);
-    // Only offset when the control is big enough for it to mean anything; on a
-    // tiny or hairline box the computed point can fall outside the element,
-    // which Playwright retries for the full action timeout before failing.
-    if (box && box.width >= 12 && box.height >= 12) {
-      const position = {
-        x: Math.max(1, Math.min(box.width - 2, box.width * 0.78)),
-        y: Math.max(1, Math.min(box.height - 2, box.height * 0.72)),
-      };
-      // Fall back to a plain centre hover rather than losing the anchor (and,
-      // with it, the crop target) if the offset point isn't hittable.
-      await locator.hover({ position, timeout: FOCUS_HOVER_TIMEOUT_MS }).catch(() => locator.hover());
-    } else {
-      await locator.hover();
-    }
-    return locator;
+    await locator.hover();
   } catch (err) {
     logger.debug(`focus anchor skipped for "${id}": ${err instanceof Error ? err.message : err}`);
-    return null;
   }
 }

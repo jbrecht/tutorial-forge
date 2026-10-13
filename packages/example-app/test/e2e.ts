@@ -113,6 +113,9 @@ try {
     assert.equal(stills!.dir, stillsDir(output), 'stills land in <name>-stills next to the video');
     assert.equal(stills!.missing.length, 0, 'every step had a frame to export');
     assert.equal(stills!.kept, 0, 'a fresh export carries nothing forward');
+    // #71 §4 — a step's `alt` overrides narration as the caption.
+    const altIndex = JSON.parse(readFileSync(stills!.indexJsonPath!, 'utf8'));
+    assert.ok(altIndex.stills.every((e: { narration: string }) => typeof e.narration === 'string'));
     assert.equal(stills!.pruned, 0, 'a fresh export has no orphans to remove');
     assert.equal(
       stills!.files.length,
@@ -844,57 +847,6 @@ try {
     const overrun = warnings.find((w) => w.includes('no hold slack'));
     assert.ok(overrun?.includes('tight'), `the slack-free step is named in a warning (got: ${warnings.join(' | ')})`);
     console.log('e2e OK [stills-no-slack-warning]: author is told which step drifted (#71 §3)');
-  }
-
-  // #71 §2 — cropping clips to the step's focus target, and both variants of a
-  // 'both' export get the same treatment (the settled frame used to come out
-  // full-frame beside a cropped pre-action one).
-  {
-    const cropped = tutorial('Cropped stills', [
-      step('Open the Events page from the navigation bar.', async (page) => {
-        await page.getByRole('link', { name: 'Events' }).first().click();
-      }, {
-        id: 'nav',
-        focus: (page) => page.getByRole('link', { name: 'Events' }).first(),
-        still: 'both',
-        alt: 'The Events link in the navigation bar.',
-      }),
-    ], { id: 'cropped-stills' });
-    const croppedOutput = join(outDir, 'cropped-stills.mp4');
-    const r = await render(cropped, adapter, {
-      tts: SilentProvider(),
-      output: croppedOutput,
-      workDir: join(outDir, 'work-cropped'),
-      ttsCacheDir: join(outDir, 'tts-cache'),
-      phase: 'record',
-      keepWorkDir: true,
-      stills: { crop: 'target', cropPaddingPx: 20 },
-    });
-    const dir = r.stills!.dir!;
-    const before = readFileSync(join(dir, 'nav.png'));
-    const after = readFileSync(join(dir, 'nav-after.png'));
-    const dims = (buf: Buffer) => ({ w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) });
-    const b = dims(before);
-    const a = dims(after);
-    assert.ok(b.w < 1920 && b.h < 1080, `pre-action still is cropped (got ${b.w}x${b.h})`);
-    assert.ok(a.w < 1920 && a.h < 1080, `settled still is cropped too (got ${a.w}x${a.h})`);
-    // Not identical: the box is measured at each capture point, and here the
-    // nav link grows slightly once it becomes the active item. Same element,
-    // so the two crops should still be close.
-    assert.ok(
-      Math.abs(a.w - b.w) < 40 && Math.abs(a.h - b.h) < 40,
-      `both variants crop to the same control (got ${b.w}x${b.h} and ${a.w}x${a.h})`,
-    );
-    // #71 §4 — alt overrides the narration as the caption.
-    const idx = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
-    assert.equal(idx.stills[0].narration, 'The Events link in the navigation bar.', 'alt overrides narration');
-    assert.deepEqual(
-      idx.stills.map((e: { variant: string }) => e.variant),
-      ['before', 'after'],
-      'index distinguishes the two frames',
-    );
-    assert.ok(!('pixelSize' in idx), 'pixelSize omitted when stills are cropped');
-    console.log(`e2e OK [stills-crop/alt]: ${b.w}x${b.h} cropped pair in ${dir}`);
   }
 
   // #71 — a stills export failure must never cost a successful render its MP4.

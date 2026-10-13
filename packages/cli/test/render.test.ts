@@ -97,28 +97,24 @@ describe('resolveStillsOption (#71)', () => {
   });
 });
 
-describe('resolveStillsOption — capture and crop flags (#71)', () => {
+describe('resolveStillsOption — capture flag (#71)', () => {
   it('maps --stills-capture onto the config', () => {
     expect(resolveStillsOption({ stillsCapture: 'after' }, undefined)).toEqual({ capture: 'after' });
-    expect(resolveStillsOption({ stillsCapture: 'both' }, { markdown: false })).toEqual({
-      capture: 'both',
+    expect(resolveStillsOption({ stillsCapture: 'before' }, { markdown: false })).toEqual({
+      capture: 'before',
       markdown: false,
     });
   });
 
   it('rejects an unknown capture value', () => {
     expect(() => resolveStillsOption({ stillsCapture: 'sideways' }, undefined)).toThrow(
-      /Invalid --stills-capture "sideways"/,
+      /Invalid --stills-capture "sideways" \(expected before \| after\)/,
     );
-  });
-
-  it('turns --stills-crop into crop: target, and implies --stills', () => {
-    expect(resolveStillsOption({ stillsCrop: true }, undefined)).toEqual({ crop: 'target' });
   });
 
   it('combines flags and still lets config supply the rest', () => {
     expect(
-      resolveStillsOption({ stillsSteps: 'save', stillsCapture: 'both', stillsCrop: true }, { filenames: 'indexed' }),
-    ).toEqual({ steps: 'save', capture: 'both', crop: 'target', filenames: 'indexed' });
+      resolveStillsOption({ stillsSteps: 'save', stillsCapture: 'after' }, { markdown: false }),
+    ).toEqual({ steps: 'save', capture: 'after', markdown: false });
   });
 });

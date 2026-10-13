@@ -32,10 +32,8 @@ export interface RenderCmdOptions {
   stills?: boolean;
   /** Stills subset ("step-id", "a..b", or a comma-separated mix). Implies --stills. */
   stillsSteps?: string;
-  /** Which frame each still shows: 'before' | 'after' | 'both'. Implies --stills. */
+  /** Which frame each still shows: 'before' | 'after'. Implies --stills. */
   stillsCapture?: string;
-  /** Crop stills to the focus target. Implies --stills. */
-  stillsCrop?: boolean;
   /** Chapter markers. Commander sets this false only when --no-chapters is passed (else true). */
   chapters?: boolean;
   /** Intro/recap cards. Commander sets this false only when --no-cards is passed (else true). */
@@ -57,22 +55,21 @@ function resolveGifOption(
  * implies --stills). Mirrors resolveGifOption.
  */
 export function resolveStillsOption(
-  opts: Pick<RenderCmdOptions, 'stills' | 'stillsSteps' | 'stillsCapture' | 'stillsCrop'>,
+  opts: Pick<RenderCmdOptions, 'stills' | 'stillsSteps' | 'stillsCapture'>,
   configStills: ForgeConfig['stills'],
 ): ForgeConfig['stills'] {
-  const anyFlag = opts.stills || opts.stillsSteps || opts.stillsCapture || opts.stillsCrop;
+  const anyFlag = opts.stills || opts.stillsSteps || opts.stillsCapture;
   if (!anyFlag) return configStills;
   const base = typeof configStills === 'object' ? configStills : {};
   const merged = { ...base };
   if (opts.stillsSteps) merged.steps = opts.stillsSteps;
   if (opts.stillsCapture) merged.capture = resolveStillsCapture(opts.stillsCapture);
-  if (opts.stillsCrop) merged.crop = 'target';
   return merged;
 }
 
-function resolveStillsCapture(value: string): 'before' | 'after' | 'both' {
-  if (value !== 'before' && value !== 'after' && value !== 'both') {
-    throw new Error(`Invalid --stills-capture "${value}" (expected before | after | both)`);
+function resolveStillsCapture(value: string): 'before' | 'after' {
+  if (value !== 'before' && value !== 'after') {
+    throw new Error(`Invalid --stills-capture "${value}" (expected before | after)`);
   }
   return value;
 }
