@@ -66,12 +66,7 @@ export async function render<S = unknown>(
   // Two steps whose ids collapse to one filename are computable from the spec,
   // so reject them here rather than after a full recording pass.
   if (wantStills) {
-    assertNoFilenameCollisions(
-      tutorialStepIds,
-      tutorialStepIds.length,
-      stillsConfig.filenames ?? 'id',
-      tutorial.id,
-    );
+    assertNoFilenameCollisions(tutorialStepIds, tutorial.id);
   }
   // Only the recording phases produce frames to publish. Say so up front
   // rather than letting the flag look like it worked.
@@ -115,13 +110,7 @@ export async function render<S = unknown>(
             recorder: options.recorder,
             debug: options.debug,
             screenshots: wantContactSheet || options.debug,
-            stills: wantStills
-              ? {
-                  capture: stillsConfig.capture ?? 'before',
-                  crop: stillsConfig.crop === 'target',
-                  cropPaddingPx: stillsConfig.cropPaddingPx ?? 24,
-                }
-              : undefined,
+            stills: wantStills ? { capture: stillsConfig.capture ?? 'before' } : undefined,
           })
         : await loadManifest(workDir);
 
@@ -148,7 +137,6 @@ export async function render<S = unknown>(
       }));
       if (stills?.dir) {
         const extra = [
-          stills.unchanged ? `${stills.unchanged} unchanged` : '',
           stills.kept ? `${stills.kept} kept` : '',
           stills.pruned ? `${stills.pruned} orphan(s) removed` : '',
         ].filter(Boolean);

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { writeFile, readFile } from 'node:fs/promises';
-import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { createRecorder, type CaptureInfo, type RecorderKind } from './recorder.js';
 import type { CalloutRecord, FailureArtifacts, Step, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { StepError } from '../types.js';
@@ -59,11 +59,7 @@ export interface RecordPhaseOptions {
    * before the action runs, so a "click this" still actually shows the control.
    * `crop` clips to the focus target plus padding.
    */
-  stills?: {
-    capture: 'before' | 'after' | 'both';
-    crop: boolean;
-    cropPaddingPx: number;
-  };
+  stills?: { capture: 'before' | 'after' };
 }
 
 /**
@@ -193,18 +189,15 @@ export async function runRecordPhase<S = unknown>(
       // action window when pacing, so enabling stills can't lengthen the step
       // (#71 §3) — the hold absorbs it instead.
       let captureOverheadMs = 0;
-      // Hoisted: the settled capture crops against the same target as the
-      // pre-action one, so a cropped set isn't half full-frame.
-      let focusTarget: Locator | null = null;
       try {
         // Anchor the cursor on the step's focus control before its own action,
         // so narration about "this control" has a visual focus (#10).
-        focusTarget = await anchorFocus(step, instrumented as Page, ctx, id);
+        await anchorFocus(step, instrumented as Page, ctx, id);
         if (wantsBefore(step, opts)) {
           const t0 = clock.now();
           // The pre-action frame (#71 §1): the control is still on screen with
           // the cursor on it, which is what a "click this" screenshot needs.
-          await captureStill(page, opts.workDir, `${fileSafeId(id)}@before`, focusTarget, opts);
+          await captureStill(page, opts.workDir, `${fileSafeId(id)}@before`);
           captureOverheadMs += clock.now() - t0;
         }
         await step.run(instrumented as Page, ctx);
@@ -243,7 +236,7 @@ export async function runRecordPhase<S = unknown>(
         const shotAt = Math.min(holdUntil - STILL_SHOT_BUDGET_MS, Math.max(settledAt, holdUntil - STILL_SHOT_BUDGET_MS));
         const untilShot = Math.max(settledAt, shotAt) - clock.now();
         if (untilShot > 0) await page.waitForTimeout(untilShot);
-        await captureStill(page, opts.workDir, fileSafeId(id), focusTarget, opts);
+        await captureStill(page, opts.workDir, fileSafeId(id));
       }
       const remaining = holdUntil - clock.now();
       if (remaining > 0) await page.waitForTimeout(remaining);
@@ -359,19 +352,17 @@ async function captureFailure(
 }
 
 /** Which still frame(s) this step needs: the step's own override wins over the render default. */
-function stillMode(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): 'before' | 'after' | 'both' | null {
+function stillMode(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): 'before' | 'after' | null {
   if (!opts.stills) return null;
   return step.still ?? opts.stills.capture;
 }
 
 function wantsBefore(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolean {
-  const mode = stillMode(step, opts);
-  return mode === 'before' || mode === 'both';
+  return stillMode(step, opts) === 'before';
 }
 
 function wantsAfter(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolean {
-  const mode = stillMode(step, opts);
-  return mode === 'after' || mode === 'both';
+  return stillMode(step, opts) === 'after';
 }
 
 /**
@@ -389,61 +380,16 @@ function wantsAfter(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolea
  */
 const STILL_FREEZE_CSS = 'input,textarea,[contenteditable]{caret-color:transparent!important}';
 
-/**
- * Capture a still. `target`, when given and cropping is on, clips to that
- * element plus padding (#71 §2) — a full 2x viewport renders the subject small
- * in a docs column. Never throws: a diagnostic must not break the render.
- */
-async function captureStill(
-  page: Page,
-  workDir: string,
-  name: string,
-  target: Locator | null,
-  opts: RecordPhaseOptions,
-): Promise<void> {
+/** Capture a still. Never throws: a diagnostic must not break the render. */
+async function captureStill(page: Page, workDir: string, name: string): Promise<void> {
   try {
     await ensureDir(join(workDir, 'steps'));
     const path = join(workDir, 'steps', `${name}.png`);
-    const clip = opts.stills?.crop ? await cropBox(page, target, opts.stills.cropPaddingPx) : undefined;
-    await page.screenshot({ path, style: STILL_FREEZE_CSS, ...(clip ? { clip } : {}) });
+    await page.screenshot({ path, style: STILL_FREEZE_CSS });
   } catch (err) {
     // Never fail the render over a still, but don't hide the cause either —
     // it surfaces otherwise only as an unexplained "no frame for step X".
     logger.warn(`stills: capture failed for "${name}": ${err instanceof Error ? err.message : err}`);
-  }
-}
-
-/** The focus target's box grown by padding and clamped to the viewport, or undefined when uncroppable. */
-async function cropBox(
-  page: Page,
-  target: Locator | null,
-  paddingPx: number,
-): Promise<{ x: number; y: number; width: number; height: number } | undefined> {
-  if (!target) return undefined;
-  try {
-    const box = await target.boundingBox();
-    if (!box) return undefined;
-    if (box.width <= 0 || box.height <= 0) return undefined;
-    const view = page.viewportSize();
-    // An element scrolled out of the viewport would otherwise clamp to a clip
-    // over the wrong region (or a 1px one Playwright rejects) — fall back to
-    // the full frame, which is at least correct.
-    if (view && (box.x >= view.width || box.y >= view.height || box.x + box.width <= 0 || box.y + box.height <= 0)) {
-      return undefined;
-    }
-    const x = Math.max(0, box.x - paddingPx);
-    const y = Math.max(0, box.y - paddingPx);
-    const maxW = view ? view.width - x : box.width + paddingPx * 2;
-    const maxH = view ? view.height - y : box.height + paddingPx * 2;
-    if (maxW <= 0 || maxH <= 0) return undefined;
-    return {
-      x,
-      y,
-      width: Math.max(1, Math.min(box.width + paddingPx * 2, maxW)),
-      height: Math.max(1, Math.min(box.height + paddingPx * 2, maxH)),
-    };
-  } catch {
-    return undefined;
   }
 }
 

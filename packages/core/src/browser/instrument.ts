@@ -81,13 +81,6 @@ async function presentAction(
   target: Locator,
   method: string,
   hooks: InstrumentHooks,
-  /**
-   * Element-relative point to park the drawn cursor on, from the caller's
-   * `{ position }` option. Without this the fake cursor always lands dead
-   * centre — so a `hover({ position })` moved only the invisible real pointer
-   * and the visible arrow still covered the control's label (#71 §2).
-   */
-  position?: { x: number; y: number },
 ): Promise<void> {
   if (!hooks.cursor && !hooks.callouts) return;
   try {
@@ -95,8 +88,8 @@ async function presentAction(
     await scrollIntoViewSmooth(page, target);
     const box = await target.boundingBox();
     if (!box) return;
-    const cx = box.x + (position ? clamp(position.x, 0, box.width) : box.width / 2);
-    const cy = box.y + (position ? clamp(position.y, 0, box.height) : box.height / 2);
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
     if (hooks.cursor) {
       await page.evaluate(
         ([x, y]) => (window as { __forgeCursor?: { moveTo(x: number, y: number): void } }).__forgeCursor?.moveTo(x!, y!),
@@ -129,17 +122,6 @@ async function presentAction(
   }
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-/** Pull `{ position }` out of a Playwright action's options bag, if present. */
-function readPosition(options: unknown): { x: number; y: number } | undefined {
-  const position = (options as { position?: unknown } | undefined)?.position;
-  const p = position as { x?: unknown; y?: unknown } | undefined;
-  return typeof p?.x === 'number' && typeof p?.y === 'number' ? { x: p.x, y: p.y } : undefined;
-}
-
 function wrapLocator(locator: Locator, page: Page, hooks: InstrumentHooks): Locator {
   return new Proxy(locator, {
     get(target, prop, receiver) {
@@ -147,7 +129,7 @@ function wrapLocator(locator: Locator, page: Page, hooks: InstrumentHooks): Loca
       if (typeof value !== 'function' || typeof prop !== 'string') return value;
       if (ACTION_METHODS.has(prop)) {
         return async (...args: unknown[]) => {
-          await presentAction(page, target, prop, hooks, readPosition(args[0]));
+          await presentAction(page, target, prop, hooks);
           return (value as (...a: unknown[]) => unknown).apply(target, args);
         };
       }

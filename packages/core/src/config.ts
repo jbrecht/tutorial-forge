@@ -49,16 +49,7 @@ export interface ForgeConfig {
    * screenshots (#71). `{ steps }` selects a subset (ids and/or "a..b" ranges).
    * Default off.
    */
-  stills?:
-    | boolean
-    | {
-        steps?: string;
-        markdown?: boolean;
-        capture?: 'before' | 'after' | 'both';
-        crop?: 'target' | false;
-        cropPaddingPx?: number;
-        filenames?: 'id' | 'indexed';
-      };
+  stills?: boolean | { steps?: string; markdown?: boolean; capture?: 'before' | 'after' };
   /** Emit chapter markers — MP4 chapter track + .chapters.vtt/.txt sidecars (#35). Default true. */
   chapters?: boolean;
   /** Render intro/recap cards from each tutorial's objectives/summary (#37). Default true. */
@@ -130,10 +121,7 @@ const configSchema = z.object({
       z.object({
         steps: z.string().optional(),
         markdown: z.boolean().optional(),
-        capture: z.enum(['before', 'after', 'both']).optional(),
-        crop: z.union([z.literal('target'), z.literal(false)]).optional(),
-        cropPaddingPx: z.number().int().nonnegative().optional(),
-        filenames: z.enum(['id', 'indexed']).optional(),
+        capture: z.enum(['before', 'after']).optional(),
       }),
     ])
     .optional(),

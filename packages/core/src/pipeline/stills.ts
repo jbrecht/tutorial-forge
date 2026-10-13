@@ -1,6 +1,5 @@
 import { join, dirname, basename, extname } from 'node:path';
 import { copyFile, writeFile, readFile, open as openFile, unlink } from 'node:fs/promises';
-import { inflateSync } from 'node:zlib';
 import type { FileHandle } from 'node:fs/promises';
 import type { TimingManifest } from '../types.js';
 import { ensureDir, exists } from '../util/fs.js';
@@ -34,27 +33,17 @@ export interface StillsConfig {
   /** Also write index.md with paste-ready markdown image snippets. Default true. */
   markdown?: boolean;
   /**
-   * Which frame to export per step: the pre-action frame (default), the settled
-   * end-of-step frame, or both. Per-step `Step.still` overrides this.
+   * Which frame to export per step. `'before'` (default) is the pre-action
+   * frame — what a "click this" screenshot needs. `'after'` is the settled
+   * end-of-step frame, for steps whose point is the result. Per-step
+   * `Step.still` overrides this.
    */
-  capture?: 'before' | 'after' | 'both';
-  /** Crop to the step's focus target plus padding. Default false. */
-  crop?: 'target' | false;
-  /** Padding in CSS px around a crop. Default 24. */
-  cropPaddingPx?: number;
-  /**
-   * `'id'` (default) → `<step-id>.png`, stable when a step is inserted earlier.
-   * `'indexed'` → `NN-<step-id>.png`, listing in tutorial order.
-   */
-  filenames?: 'id' | 'indexed';
+  capture?: 'before' | 'after';
 }
 
 export const DEFAULT_STILLS: Required<Omit<StillsConfig, 'steps'>> = {
   markdown: true,
   capture: 'before',
-  crop: false,
-  cropPaddingPx: 24,
-  filenames: 'id',
 };
 
 export interface StillEntry {
@@ -66,8 +55,6 @@ export interface StillEntry {
   source: string;
   /** Basename written into the stills dir, e.g. "save.png" or "03-save.png". */
   file: string;
-  /** Which captured frame this entry publishes. */
-  variant: 'before' | 'after';
   /**
    * Whether *this* recording pass produced a frame for the step — true only for
    * steps present in the pass's manifest, which on a failed render is just the
@@ -78,143 +65,12 @@ export interface StillEntry {
   recorded: boolean;
 }
 
-/**
- * Decode a PNG to raw 8-bit RGBA-ish scanlines using only node:zlib, so a
- * re-export can tell "visually identical" from "different" without pulling in
- * an image library or shelling out to ffmpeg (the stills path advertises that
- * it needs neither). Returns null for anything outside Playwright's output
- * shape (8-bit, non-interlaced, colour type 0/2/4/6), which callers treat as
- * "can't compare".
- */
-function decodePng(buf: Buffer): { width: number; height: number; channels: number; data: Buffer } | null {
-  if (buf.length < 8 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
-  let pos = 8;
-  let width = 0;
-  let height = 0;
-  let channels = 0;
-  const idat: Buffer[] = [];
-  while (pos + 8 <= buf.length) {
-    const len = buf.readUInt32BE(pos);
-    // A chunk that runs past the end means the file is truncated — a half-written
-    // copy, say. Bail instead of reading a short subarray and overrunning it.
-    if (pos + 12 + len > buf.length) return null;
-    const type = buf.toString('ascii', pos + 4, pos + 8);
-    const body = buf.subarray(pos + 8, pos + 8 + len);
-    if (type === 'IHDR') {
-      if (body.length < 13) return null;
-      width = body.readUInt32BE(0);
-      height = body.readUInt32BE(4);
-      const depth = body[8];
-      const colorType = body[9];
-      const interlace = body[12];
-      if (depth !== 8 || interlace !== 0) return null;
-      if (width <= 0 || height <= 0 || width > 20000 || height > 20000) return null;
-      const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 4: 2, 6: 4 };
-      channels = CHANNELS[colorType!] ?? 0;
-      if (!channels) return null;
-    } else if (type === 'IDAT') {
-      idat.push(body);
-    } else if (type === 'IEND') {
-      break;
-    }
-    pos += 12 + len; // length + type + data + crc
-  }
-  if (!width || !height || !channels || idat.length === 0) return null;
-  let raw: Buffer;
-  try {
-    // Cap the output at exactly what IHDR implies, so a corrupt or crafted IDAT
-    // can't inflate into an unbounded allocation.
-    raw = inflateSync(Buffer.concat(idat), { maxOutputLength: (width * channels + 1) * height });
-  } catch {
-    return null;
-  }
-  const stride = width * channels;
-  if (raw.length < (stride + 1) * height) return null;
-  // Undo per-scanline filtering (PNG spec §9).
-  const out = Buffer.alloc(stride * height);
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)]!;
-    const line = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
-    const cur = out.subarray(y * stride, (y + 1) * stride);
-    const prev = y > 0 ? out.subarray((y - 1) * stride, y * stride) : null;
-    for (let x = 0; x < stride; x++) {
-      const a = x >= channels ? cur[x - channels]! : 0;
-      const b = prev ? prev[x]! : 0;
-      const c = prev && x >= channels ? prev[x - channels]! : 0;
-      const v = line[x]!;
-      let val: number;
-      switch (filter) {
-        case 0: val = v; break;
-        case 1: val = v + a; break;
-        case 2: val = v + b; break;
-        case 3: val = v + ((a + b) >> 1); break;
-        case 4: {
-          const pa = Math.abs(b - c);
-          const pb = Math.abs(a - c);
-          const pc = Math.abs(a + b - 2 * c);
-          val = v + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-          break;
-        }
-        default: return null;
-      }
-      cur[x] = val & 0xff;
-    }
-  }
-  return { width, height, channels, data: out };
-}
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-/** Largest per-channel difference that still counts as the same screenshot. */
-const STILL_PIXEL_TOLERANCE = 8;
-
-/**
- * Whether two PNGs are the same picture. Re-rendering the same tutorial
- * produces frames that differ by a few least-significant bits (antialiasing,
- * font rasterisation) while being visually identical — rewriting those churns
- * a docs repo that commits its stills, defeating the point of the
- * timestamp-free index (#71 §5).
- */
-export async function stillsEquivalent(a: string, b: string): Promise<boolean> {
-  let bufA: Buffer;
-  let bufB: Buffer;
-  try {
-    [bufA, bufB] = await Promise.all([readFileBytes(a), readFileBytes(b)]);
-  } catch {
-    return false;
-  }
-  if (bufA.equals(bufB)) return true;
-  // A malformed destination (a half-written copy from an interrupted export, or
-  // something an author dropped in) must degrade to "different" — i.e. rewrite
-  // it — never abort the export.
-  let pa: ReturnType<typeof decodePng>;
-  let pb: ReturnType<typeof decodePng>;
-  try {
-    pa = decodePng(bufA);
-    pb = decodePng(bufB);
-  } catch {
-    return false;
-  }
-  if (!pa || !pb) return false;
-  if (pa.width !== pb.width || pa.height !== pb.height || pa.channels !== pb.channels) return false;
-  for (let i = 0; i < pa.data.length; i++) {
-    if (Math.abs(pa.data[i]! - pb.data[i]!) > STILL_PIXEL_TOLERANCE) return false;
-  }
-  return true;
-}
-
-function readFileBytes(path: string): Promise<Buffer> {
-  return readFile(path);
-}
-
 /** One still as recorded in a written index.json. */
 export interface StillIndexEntry {
   index: number;
   id: string;
   file: string;
   narration: string;
-  /** Which frame this is. Present so a `capture: 'both'` pair is distinguishable. */
-  variant?: 'before' | 'after';
 }
 
 /**
@@ -266,8 +122,6 @@ export interface StillsResult {
   kept: number;
   /** Orphans deleted — previously-indexed stills whose step no longer exists. */
   pruned: number;
-  /** Stills left untouched because the new frame was visually identical (#71 §5). */
-  unchanged: number;
 }
 
 /** Default stills directory next to the final video: <output dir>/<name>-stills/ */
@@ -281,18 +135,8 @@ export function stillsDir(output: string): string {
  * selection, so a step's filename is identical whether it was exported alone
  * or as part of the whole set.
  */
-export function stillFileName(
-  index: number,
-  id: string,
-  totalSteps: number,
-  scheme: 'id' | 'indexed' = DEFAULT_STILLS.filenames,
-  variant: 'before' | 'after' = 'before',
-): string {
-  const suffix = variant === 'after' ? '-after' : '';
-  const safe = fileSafeId(id);
-  if (scheme === 'id') return `${safe}${suffix}.png`;
-  const width = Math.max(2, String(totalSteps).length);
-  return `${String(index).padStart(width, '0')}-${safe}${suffix}.png`;
+export function stillFileName(id: string): string {
+  return `${fileSafeId(id)}.png`;
 }
 
 /**
@@ -383,48 +227,34 @@ export function stillsEntries(
   tutorialStepIds: string[] = manifest.steps.map((s) => s.id),
   config: StillsConfig = {},
 ): StillEntry[] {
-  const total = tutorialStepIds.length;
-  const scheme = config.filenames ?? DEFAULT_STILLS.filenames;
   const defaultMode = config.capture ?? DEFAULT_STILLS.capture;
   const recorded = new Map(manifest.steps.map((s) => [s.id, s]));
 
-  const entries: StillEntry[] = [];
-  for (const i of selectStillStepIds(tutorialStepIds, manifest.tutorialId, steps)) {
+  const entries: StillEntry[] = selectStillStepIds(tutorialStepIds, manifest.tutorialId, steps).map((i) => {
     const id = tutorialStepIds[i]!;
     const step = recorded.get(id);
     const mode = assertCaptureMode(step?.still ?? defaultMode, id);
-    // Caption precedence: the step's explicit alt, else its narration (#71 §4).
-    const caption = step?.alt ?? step?.narration ?? '';
-    const variants: Array<'before' | 'after'> =
-      mode === 'both' ? ['before', 'after'] : [mode];
-    // The "-after" suffix exists only to let the two frames coexist. When a
-    // step exports just one, it gets the plain name — a docs link shouldn't
-    // say "-after" merely because the author preferred the settled frame.
-    const suffixed = variants.length > 1;
-    for (const variant of variants) {
-      entries.push({
-        index: i + 1,
-        id,
-        narration: caption,
-        // record writes the pre-action frame as <id>@before.png and the
-        // settled one as <id>.png.
-        // Matches what record writes — both sides sanitise, so an awkward id
-        // can't point the export at a path record never wrote (or escape the dir).
-        source: join(
-          workDir,
-          'steps',
-          variant === 'before' ? `${fileSafeId(id)}@before.png` : `${fileSafeId(id)}.png`,
-        ),
-        file: stillFileName(i + 1, id, total, scheme, suffixed ? variant : 'before'),
-        variant,
-        recorded: step !== undefined,
-      });
-    }
-  }
+    return {
+      index: i + 1,
+      id,
+      // Caption precedence: the step's explicit alt, else its narration (#71 §4).
+      narration: step?.alt ?? step?.narration ?? '',
+      // record writes the pre-action frame as <id>@before.png and the settled
+      // one as <id>.png. Both sides sanitise, so an awkward id can't point the
+      // export at a path record never wrote.
+      source: join(
+        workDir,
+        'steps',
+        mode === 'before' ? `${fileSafeId(id)}@before.png` : `${fileSafeId(id)}.png`,
+      ),
+      file: stillFileName(id),
+      recorded: step !== undefined,
+    };
+  });
   // Check the whole tutorial, not just the selection: two colliding steps in
   // separate subset exports would otherwise each succeed and silently write
   // onto one file.
-  assertNoFilenameCollisions(tutorialStepIds, total, scheme, manifest.tutorialId);
+  assertNoFilenameCollisions(tutorialStepIds, manifest.tutorialId);
   return entries;
 }
 
@@ -433,29 +263,18 @@ export function stillsEntries(
  * and `fileSafeId` can map two distinct ids onto one name ("a b" and "a-b").
  * Fail loudly rather than silently overwriting one still with another.
  */
-export function assertNoFilenameCollisions(
-  tutorialStepIds: string[],
-  totalSteps: number,
-  scheme: 'id' | 'indexed',
-  tutorialId: string,
-): void {
+export function assertNoFilenameCollisions(tutorialStepIds: string[], tutorialId: string): void {
   const seen = new Map<string, string>();
-  tutorialStepIds.forEach((id, i) => {
-    // Both variants, so a step named "<x>-after" can't collide with x's settled frame.
-    for (const variant of ['before', 'after'] as const) {
-      const file = stillFileName(i + 1, id, totalSteps, scheme, variant);
-      const prior = seen.get(file);
-      if (prior !== undefined && prior !== id) {
-        throw new Error(
-          `Steps "${prior}" and "${id}" in tutorial "${tutorialId}" both produce the still "${file}". ` +
-            (scheme === 'id'
-              ? 'Rename one step, or set stills.filenames to "indexed".'
-              : 'Rename one of the steps.'),
-        );
-      }
-      seen.set(file, id);
+  for (const id of tutorialStepIds) {
+    const file = stillFileName(id);
+    const prior = seen.get(file);
+    if (prior !== undefined && prior !== id) {
+      throw new Error(
+        `Steps "${prior}" and "${id}" in tutorial "${tutorialId}" both produce the still "${file}". Rename one of them.`,
+      );
     }
-  });
+    seen.set(file, id);
+  }
 }
 
 export interface StillsIndexMeta {
@@ -515,14 +334,11 @@ export function stillsIndexJson(entries: StillIndexEntry[], meta: StillsIndexMet
         ...(meta.lang ? { lang: meta.lang } : {}),
         viewport: meta.viewport,
         ...(meta.pixelSize ? { pixelSize: meta.pixelSize } : {}),
-        // Per-still dimensions, so a cropped set is still machine-readable.
-        ...(meta.pixelSize ? {} : { pixelSizeVaries: true }),
         stills: entries.map((e) => ({
           index: e.index,
           id: e.id,
           file: e.file,
           narration: e.narration,
-          ...(e.variant ? { variant: e.variant } : {}),
         })),
       },
       null,
@@ -539,9 +355,7 @@ export function stillsIndexJson(entries: StillIndexEntry[], meta: StillsIndexMet
 function headingFor(e: StillIndexEntry): string {
   const flat = (e.narration ?? '').replace(/\s+/g, ' ').trim();
   const base = flat ? firstSentence(flat) : e.id;
-  // Under capture: 'both' the two frames share a caption and an index; say which
-  // is which rather than emitting the same heading twice.
-  return e.variant === 'after' ? `${base} (result)` : base;
+  return base;
 }
 
 /**
@@ -568,17 +382,13 @@ function truncateGraphemes(text: string, max: number): string {
 }
 
 /** Guard the mode for callers who bypass the zod-validated config (the programmatic API). */
-function assertCaptureMode(mode: unknown, stepId: string): 'before' | 'after' | 'both' {
-  if (mode !== 'before' && mode !== 'after' && mode !== 'both') {
+function assertCaptureMode(mode: unknown, stepId: string): 'before' | 'after' {
+  if (mode !== 'before' && mode !== 'after') {
     throw new Error(
-      `Invalid stills capture mode ${JSON.stringify(mode)} for step "${stepId}" (expected before | after | both)`,
+      `Invalid stills capture mode ${JSON.stringify(mode)} for step "${stepId}" (expected before | after)`,
     );
   }
   return mode;
-}
-
-function variantRank(e: StillIndexEntry): number {
-  return e.variant === 'after' ? 1 : 0;
 }
 
 /** Escape text for use as markdown image alt text (single-line, bracket-safe). */
@@ -675,7 +485,6 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
       missing,
       kept: 0,
       pruned: 0,
-      unchanged: 0,
     };
   }
 
@@ -683,12 +492,9 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
   const previous = await readPreviousIndex(outDir);
 
   const files: string[] = [];
-  let unchanged = 0;
   for (const e of present) {
     const dest = join(outDir, e.file);
-    // Leave a byte-identical-enough file alone so committed stills don't churn.
-    if (await stillsEquivalent(e.source, dest)) unchanged++;
-    else await copyFile(e.source, dest);
+    await copyFile(e.source, dest);
     files.push(dest);
   }
 
@@ -737,10 +543,9 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
       id: e.id,
       file: e.file,
       narration: e.narration,
-      variant: e.variant,
     })),
     ...carried,
-  ].sort((a, b) => a.index - b.index || variantRank(a) - variantRank(b));
+  ].sort((a, b) => a.index - b.index);
 
   const indexJsonPath = join(outDir, 'index.json');
   await writeFile(indexJsonPath, stillsIndexJson(indexed, indexMeta));
@@ -768,6 +573,5 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
     missing,
     kept: carried.length,
     pruned,
-    unchanged,
   };
 }

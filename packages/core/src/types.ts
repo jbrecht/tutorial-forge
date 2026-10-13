@@ -93,9 +93,8 @@ export interface Step<S = unknown> {
    *   still on screen with the cursor on it.
    * - `'after'` — the settled end-of-step frame. The right choice for steps
    *   whose point is the *result* ("the draft now appears in the list").
-   * - `'both'` — export both, as `<id>.png` and `<id>-after.png`.
    */
-  still?: 'before' | 'after' | 'both';
+  still?: 'before' | 'after';
   /**
    * Opt this step out of the load-time pedagogy lints (see {@link LintOptions})
    * — for an intentionally long narration or a deliberately multi-action step.
@@ -263,25 +262,9 @@ export interface RenderOptions {
          * Which frame to export per step. `'before'` (default) captures after
          * the cursor anchors on the focus target but before the action runs —
          * what a "click this" screenshot needs. `'after'` is the settled
-         * end-of-step frame; `'both'` exports each. Per-step `Step.still` wins.
+         * end-of-step frame. Per-step `Step.still` wins.
          */
-        capture?: 'before' | 'after' | 'both';
-        /**
-         * Crop each still to the step's `focus` target plus padding, instead of
-         * the full viewport. Steps without a `focus` stay full-frame. Default
-         * false.
-         */
-        crop?: 'target' | false;
-        /** Padding in CSS px around the crop target. Default 24. */
-        cropPaddingPx?: number;
-        /**
-         * `'id'` (default) names stills `<step-id>.png`, so a link from your
-         * docs survives inserting a step earlier in the tutorial. `'indexed'`
-         * prefixes the tutorial position (`03-save.png`) so a directory listing
-         * reads in order — at the cost of renaming on insertion. Order is in
-         * `index.json` either way.
-         */
-        filenames?: 'id' | 'indexed';
+        capture?: 'before' | 'after';
       };
   /**
    * Emit chapter markers (#35): an MP4 chapter track plus `.chapters.vtt` and
@@ -313,7 +296,7 @@ export interface ManifestStep {
   /** Step.alt, when set — the still's caption overrides the narration. */
   alt?: string;
   /** Step.still, when set — which frame this step's still exports. */
-  still?: 'before' | 'after' | 'both';
+  still?: 'before' | 'after';
   audioFile: string | null;
   /** 0 for silent steps */
   audioDurationMs: number;

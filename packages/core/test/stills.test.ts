@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, writeFile, readFile, readdir, unlink, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   exportStills,
@@ -11,7 +11,6 @@ import {
   stillFileName,
   stillsDir,
   stillsEntries,
-  stillsEquivalent,
   stillsIndexJson,
   stillsIndexMarkdown,
   validateStillsSelection,
@@ -99,32 +98,21 @@ describe('stillsDir', () => {
 });
 
 describe('stillFileName (#71 §6)', () => {
-  it('defaults to the step id alone, so a docs link survives inserting a step', () => {
-    expect(stillFileName(3, 'set-status', 9)).toBe('set-status.png');
-    // The same step at a different position keeps the same name.
-    expect(stillFileName(7, 'set-status', 9)).toBe('set-status.png');
-  });
-
-  it('prefixes the tutorial position under the indexed scheme', () => {
-    expect(stillFileName(3, 'set-status', 9, 'indexed')).toBe('03-set-status.png');
-    expect(stillFileName(7, 'open', 120, 'indexed')).toBe('007-open.png');
-  });
-
-  it('suffixes the settled frame so both variants can coexist', () => {
-    expect(stillFileName(3, 'save', 9, 'id', 'after')).toBe('save-after.png');
-    expect(stillFileName(3, 'save', 9, 'indexed', 'after')).toBe('03-save-after.png');
+  it('names a still for its step id, so a docs link survives inserting a step', () => {
+    // No position prefix: inserting a step earlier must not rename this file.
+    expect(stillFileName('set-status')).toBe('set-status.png');
   });
 
   it('collapses characters that would break a filename or markdown link', () => {
-    expect(stillFileName(1, 'save draft', 8)).toBe('save-draft.png');
-    expect(stillFileName(1, 'pick (type)?', 8)).toBe('pick-type.png');
-    expect(stillFileName(1, '../escaped', 8)).toBe('escaped.png');
-    expect(stillFileName(1, 'a/b', 8)).toBe('a-b.png');
-    expect(stillFileName(1, '..', 8)).toBe('step.png');
+    expect(stillFileName('save draft')).toBe('save-draft.png');
+    expect(stillFileName('pick (type)?')).toBe('pick-type.png');
+    expect(stillFileName('../escaped')).toBe('escaped.png');
+    expect(stillFileName('a/b')).toBe('a-b.png');
+    expect(stillFileName('..')).toBe('step.png');
   });
 
   it('leaves slug-shaped ids alone', () => {
-    expect(stillFileName(3, 'step_01.v2', 8)).toBe('step_01.v2.png');
+    expect(stillFileName('step_01.v2')).toBe('step_01.v2.png');
   });
 });
 
@@ -162,24 +150,16 @@ describe('selection parsing', () => {
 describe('stillsEntries — frame selection (#71 §1)', () => {
   it('publishes the pre-action frame by default', () => {
     const [e] = stillsEntries(manifest(['save']), '/work');
-    expect(e!.variant).toBe('before');
+    // The point of §1: a "click Save" caption must not sit over the screen
+    // Save led to, so the default source is the pre-action capture.
     expect(e!.source).toBe(join('/work', 'steps', 'save@before.png'));
     expect(e!.file).toBe('save.png');
   });
 
   it('publishes the settled frame when asked', () => {
     const [e] = stillsEntries(manifest(['save']), '/work', undefined, undefined, { capture: 'after' });
-    expect(e!.variant).toBe('after');
     expect(e!.source).toBe(join('/work', 'steps', 'save.png'));
     expect(e!.file).toBe('save.png');
-  });
-
-  it("emits both frames under capture: 'both', with distinct filenames", () => {
-    const entries = stillsEntries(manifest(['save']), '/work', undefined, undefined, { capture: 'both' });
-    expect(entries.map((e) => [e.variant, e.file])).toEqual([
-      ['before', 'save.png'],
-      ['after', 'save-after.png'],
-    ]);
   });
 
   it('lets a step override the render default — the result-is-the-point case', () => {
@@ -190,10 +170,14 @@ describe('stillsEntries — frame selection (#71 §1)', () => {
       undefined,
       { capture: 'before' },
     );
-    expect(entries.map((e) => [e.id, e.variant])).toEqual([
-      ['click-save', 'before'],
-      ['list-updates', 'after'],
+    expect(entries.map((e) => [e.id, e.source.endsWith('@before.png')])).toEqual([
+      ['click-save', true],
+      ['list-updates', false],
     ]);
+  });
+
+  it('exports exactly one still per step', () => {
+    expect(stillsEntries(manifest(['a', 'b', 'c']), '/w')).toHaveLength(3);
   });
 });
 
@@ -237,25 +221,19 @@ describe('stillsEntries — numbering and partial manifests', () => {
 
   it('rejects two steps that would collide on one filename', () => {
     expect(() => stillsEntries(manifest(['save draft', 'save-draft']), '/w')).toThrow(
-      /both produce the still "save-draft.png".*filenames to "indexed"/s,
+      /Steps "save draft" and "save-draft" .* both produce the still "save-draft.png"/s,
     );
-    // The indexed scheme disambiguates by position, so it is allowed.
-    expect(() =>
-      stillsEntries(manifest(['save draft', 'save-draft']), '/w', undefined, undefined, {
-        filenames: 'indexed',
-      }),
-    ).not.toThrow();
   });
 });
 
 describe('index documents', () => {
-  it('carries id, file, variant-aware name and caption for each still', () => {
+  it('carries id, file and caption for each still', () => {
     const entries = stillsEntries(manifest(['open', 'save']), '/work');
     const parsed = JSON.parse(stillsIndexJson(entries, meta));
     expect(parsed.tutorialId).toBe('run-an-event');
     expect(parsed.stills).toEqual([
-      { index: 1, id: 'open', file: 'open.png', narration: 'Do open.', variant: 'before' },
-      { index: 2, id: 'save', file: 'save.png', narration: 'Do save.', variant: 'before' },
+      { index: 1, id: 'open', file: 'open.png', narration: 'Do open.' },
+      { index: 2, id: 'save', file: 'save.png', narration: 'Do save.' },
     ]);
   });
 
@@ -340,16 +318,6 @@ describe('exportStills', () => {
     expect(result.missing).toEqual(['filter', 'save']);
   });
 
-  it('exports both variants when asked', async () => {
-    const f = await fixture(['save@before', 'save']);
-    await exportStills({
-      entries: stillsEntries(manifest(['save']), f.workDir, undefined, undefined, { capture: 'both' }),
-      outDir: f.outDir,
-      meta,
-      config: { capture: 'both' },
-    });
-    expect((await readdir(f.outDir)).sort()).toEqual(['index.json', 'index.md', 'save-after.png', 'save.png']);
-  });
 });
 
 describe('exportStills — re-export reconciliation', () => {
@@ -428,54 +396,6 @@ describe('exportStills — re-export reconciliation', () => {
   });
 });
 
-describe('re-render byte stability (#71 §5)', () => {
-  it('treats a visually identical frame as unchanged and leaves the file alone', async () => {
-    const f = await fixture(['open@before'], [100, 100, 100]);
-    await exportStills({ entries: stillsEntries(manifest(['open']), f.workDir), outDir: f.outDir, meta });
-    const before = await stat(join(f.outDir, 'open.png'));
-
-    // Re-record the same screen, a few least-significant bits different —
-    // what antialiasing/font rasterisation actually produces between runs.
-    await writeFile(join(f.workDir, 'steps', 'open@before.png'), pngOf(8, 4, [104, 103, 97]));
-    const result = await exportStills({
-      entries: stillsEntries(manifest(['open']), f.workDir),
-      outDir: f.outDir,
-      meta,
-    });
-
-    expect(result.unchanged).toBe(1);
-    const after = await stat(join(f.outDir, 'open.png'));
-    expect(after.mtimeMs).toBe(before.mtimeMs);
-  });
-
-  it('does rewrite when the screen genuinely changed', async () => {
-    const f = await fixture(['open@before'], [10, 10, 10]);
-    await exportStills({ entries: stillsEntries(manifest(['open']), f.workDir), outDir: f.outDir, meta });
-
-    await writeFile(join(f.workDir, 'steps', 'open@before.png'), pngOf(8, 4, [200, 30, 30]));
-    const result = await exportStills({
-      entries: stillsEntries(manifest(['open']), f.workDir),
-      outDir: f.outDir,
-      meta,
-    });
-
-    expect(result.unchanged).toBe(0);
-  });
-
-  it('compares pixels, not bytes, and treats a size change as different', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-eq-'));
-    const a = join(dir, 'a.png');
-    const b = join(dir, 'b.png');
-    const c = join(dir, 'c.png');
-    await writeFile(a, pngOf(8, 4, [100, 100, 100]));
-    await writeFile(b, pngOf(8, 4, [103, 97, 104])); // within tolerance
-    await writeFile(c, pngOf(16, 4, [100, 100, 100])); // different dimensions
-
-    expect(await stillsEquivalent(a, b)).toBe(true);
-    expect(await stillsEquivalent(a, c)).toBe(false);
-    expect(await stillsEquivalent(a, join(dir, 'missing.png'))).toBe(false);
-  });
-});
 
 describe('pngSize', () => {
   it('reads dimensions out of a real PNG', async () => {
@@ -517,32 +437,16 @@ describe('regressions from the second review round (#71)', () => {
     expect(() => stillsEntries(manifest(['a b', 'a-b']), '/w', 'a-b')).toThrow(/both produce the still/);
   });
 
-  it('catches a step id that would collide with another step\'s -after frame', () => {
-    expect(() => stillsEntries(manifest(['save', 'save-after']), '/w')).toThrow(
-      /Steps "save" and "save-after" in tutorial "run-an-event" both produce the still "save-after.png"/,
-    );
-  });
 
   it('validates the capture mode for programmatic callers who bypass zod', () => {
     expect(() =>
       stillsEntries(manifest(['open']), '/w', undefined, undefined, { capture: 'Before' as never }),
-    ).toThrow(/Invalid stills capture mode "Before" for step "open"/);
-    expect(() => stillsEntries(manifest([step('open', { still: 'Both' as never })]), '/w')).toThrow(
-      /Invalid stills capture mode "Both"/,
+    ).toThrow(/Invalid stills capture mode "Before" for step "open" \(expected before \| after\)/);
+    expect(() => stillsEntries(manifest([step('open', { still: 'both' as never })]), '/w')).toThrow(
+      /Invalid stills capture mode "both"/,
     );
   });
 
-  it('distinguishes the two frames in the index and in markdown headings', () => {
-    const entries = stillsEntries(manifest(['open']), '/w', undefined, undefined, { capture: 'both' });
-    const parsed = JSON.parse(stillsIndexJson(entries, meta));
-    expect(parsed.stills.map((e: { file: string; variant: string }) => [e.file, e.variant])).toEqual([
-      ['open.png', 'before'],
-      ['open-after.png', 'after'],
-    ]);
-    const md = stillsIndexMarkdown(entries, meta);
-    expect(md).toContain('## 1. Do open');
-    expect(md).toContain('## 1. Do open (result)');
-  });
 
   it('derives headings without splitting on abbreviations or cutting graphemes', () => {
     const abbrev = manifest([step('a', { narration: 'Open the file, e.g. report.pdf. Then click Save.' })]);
@@ -569,172 +473,7 @@ describe('regressions from the second review round (#71)', () => {
     expect(heading).not.toMatch(/[\[\]`#]/);
   });
 
-  it('survives a malformed destination PNG instead of aborting the export', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-badpng-'));
-    const good = join(dir, 'good.png');
-    const truncated = join(dir, 'truncated.png');
-    await writeFile(good, pngOf(8, 4, [1, 2, 3]));
-    // A half-written copy: valid signature, IHDR that declares more than it has.
-    await writeFile(truncated, pngOf(8, 4, [1, 2, 3]).subarray(0, 20));
-    await expect(stillsEquivalent(good, truncated)).resolves.toBe(false);
-    await expect(stillsEquivalent(truncated, good)).resolves.toBe(false);
-  });
 
-  it('rejects an absurd declared size rather than allocating for it', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-hugepng-'));
-    const huge = pngOf(8, 4, [0, 0, 0]);
-    huge.writeUInt32BE(100000, 16); // IHDR width
-    const file = join(dir, 'huge.png');
-    await writeFile(file, huge);
-    await expect(stillsEquivalent(file, join(dir, 'other.png'))).resolves.toBe(false);
-  });
 });
 
-describe('reconciliation keys on filename, not step id (#71)', () => {
-  async function run(config: Parameters<typeof exportStills>[0]['config'], outDir: string, workDir: string) {
-    return exportStills({
-      entries: stillsEntries(manifest(['open', 'save']), workDir, undefined, ['open', 'save'], config),
-      outDir,
-      meta,
-      config,
-      tutorialStepIds: ['open', 'save'],
-    });
-  }
 
-  it('prunes the old set when the filename scheme changes', async () => {
-    const f = await fixture(['open@before', 'save@before']);
-    await run({ filenames: 'indexed' }, f.outDir, f.workDir);
-    expect((await readdir(f.outDir)).filter((n) => n.endsWith('.png')).sort()).toEqual([
-      '01-open.png',
-      '02-save.png',
-    ]);
-
-    const result = await run({ filenames: 'id' }, f.outDir, f.workDir);
-
-    expect(result.pruned).toBe(2);
-    expect((await readdir(f.outDir)).filter((n) => n.endsWith('.png')).sort()).toEqual([
-      'open.png',
-      'save.png',
-    ]);
-  });
-
-  it('prunes the orphaned -after frame when a step stops exporting both', async () => {
-    const f = await fixture(['open@before', 'open', 'save@before', 'save']);
-    await run({ capture: 'both' }, f.outDir, f.workDir);
-    expect(await readdir(f.outDir)).toContain('open-after.png');
-
-    const result = await run({ capture: 'before' }, f.outDir, f.workDir);
-
-    expect(result.pruned).toBe(2);
-    expect(await readdir(f.outDir)).not.toContain('open-after.png');
-  });
-});
-
-describe('PNG decoding against real Playwright output shapes (#71 §5)', () => {
-  /** Encode with a chosen per-scanline filter and channel count, optionally split across IDATs. */
-  function pngFiltered(
-    width: number,
-    height: number,
-    channels: 1 | 2 | 3 | 4,
-    filter: 0 | 1 | 2 | 3 | 4,
-    idatParts = 1,
-  ): Buffer {
-    const colorType = { 1: 0, 2: 4, 3: 2, 4: 6 }[channels];
-    const stride = width * channels;
-    const pixels = Buffer.alloc(stride * height);
-    for (let i = 0; i < pixels.length; i++) pixels[i] = (i * 7 + 11) % 251;
-
-    const raw = Buffer.alloc((stride + 1) * height);
-    for (let y = 0; y < height; y++) {
-      raw[y * (stride + 1)] = filter;
-      for (let x = 0; x < stride; x++) {
-        const cur = pixels[y * stride + x]!;
-        const a = x >= channels ? pixels[y * stride + x - channels]! : 0;
-        const b = y > 0 ? pixels[(y - 1) * stride + x]! : 0;
-        const c = y > 0 && x >= channels ? pixels[(y - 1) * stride + x - channels]! : 0;
-        let enc: number;
-        switch (filter) {
-          case 0: enc = cur; break;
-          case 1: enc = cur - a; break;
-          case 2: enc = cur - b; break;
-          case 3: enc = cur - ((a + b) >> 1); break;
-          default: {
-            const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
-            enc = cur - (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-          }
-        }
-        raw[y * (stride + 1) + 1 + x] = enc & 0xff;
-      }
-    }
-
-    const chunk = (type: string, body: Buffer) => {
-      const len = Buffer.alloc(4);
-      len.writeUInt32BE(body.length);
-      return Buffer.concat([len, Buffer.from(type, 'ascii'), body, Buffer.alloc(4)]);
-    };
-    const ihdr = Buffer.alloc(13);
-    ihdr.writeUInt32BE(width, 0);
-    ihdr.writeUInt32BE(height, 4);
-    ihdr[8] = 8;
-    ihdr[9] = colorType;
-    const compressed = deflateSync(raw);
-    const parts: Buffer[] = [];
-    const size = Math.ceil(compressed.length / idatParts);
-    for (let i = 0; i < idatParts; i++) parts.push(chunk('IDAT', compressed.subarray(i * size, (i + 1) * size)));
-    return Buffer.concat([
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-      chunk('IHDR', ihdr),
-      chunk('tEXt', Buffer.from('Software\u0000forge', 'latin1')),
-      ...parts,
-      chunk('IEND', Buffer.alloc(0)),
-    ]);
-  }
-
-  it('reconstructs every filter type and channel count identically', async () => {
-    // Chromium emits RGBA with mixed per-scanline filters; a regression here
-    // fails towards "equal", which would silently keep a stale screenshot.
-    const dir = await mkdtemp(join(tmpdir(), 'forge-filters-'));
-    for (const channels of [1, 2, 3, 4] as const) {
-      const reference = join(dir, `ref-${channels}.png`);
-      await writeFile(reference, pngFiltered(9, 6, channels, 0));
-      for (const filter of [1, 2, 3, 4] as const) {
-        const variant = join(dir, `f${filter}-${channels}.png`);
-        await writeFile(variant, pngFiltered(9, 6, channels, filter));
-        expect(
-          await stillsEquivalent(reference, variant),
-          `filter ${filter}, ${channels} channels`,
-        ).toBe(true);
-      }
-    }
-  });
-
-  it('handles IDAT split across chunks, as real encoders emit', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-idat-'));
-    const one = join(dir, 'one.png');
-    const many = join(dir, 'many.png');
-    await writeFile(one, pngFiltered(16, 8, 4, 4, 1));
-    await writeFile(many, pngFiltered(16, 8, 4, 4, 5));
-    expect(await stillsEquivalent(one, many)).toBe(true);
-  });
-
-  it('still reports a genuinely different image as different', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-diff-'));
-    const a = join(dir, 'a.png');
-    const b = join(dir, 'b.png');
-    await writeFile(a, pngFiltered(9, 6, 3, 2));
-    await writeFile(b, pngOf(9, 6, [200, 30, 30]));
-    expect(await stillsEquivalent(a, b)).toBe(false);
-  });
-
-  it('pins the tolerance boundary', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-tol-'));
-    const base = join(dir, 'base.png');
-    const edge = join(dir, 'edge.png');
-    const over = join(dir, 'over.png');
-    await writeFile(base, pngOf(4, 4, [100, 100, 100]));
-    await writeFile(edge, pngOf(4, 4, [108, 100, 100])); // delta 8 — equal
-    await writeFile(over, pngOf(4, 4, [109, 100, 100])); // delta 9 — different
-    expect(await stillsEquivalent(base, edge)).toBe(true);
-    expect(await stillsEquivalent(base, over)).toBe(false);
-  });
-});
