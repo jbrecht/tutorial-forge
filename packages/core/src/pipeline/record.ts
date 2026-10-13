@@ -247,7 +247,10 @@ export async function runRecordPhase<S = unknown>(
       }
       const remaining = holdUntil - clock.now();
       if (remaining > 0) await page.waitForTimeout(remaining);
-      else if (wantSettled && remaining < -STILL_OVERRUN_WARN_MS) {
+      // Any capture this step took can overrun the hold, not just the settled
+      // one: with the default capture:'before' there is no settled shot at all,
+      // and that was the regime where the drift went unreported.
+      else if ((wantSettled || captureOverheadMs > 0) && remaining < -STILL_OVERRUN_WARN_MS) {
         // The capture didn't fit in this step's hold, so it lengthened the
         // recording. Say so: silent drift is what made this a bug the first time.
         logger.warn(
@@ -379,8 +382,12 @@ function wantsAfter(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolea
  * video as a 2-3 frame stutter. Hiding the caret is safe — it blinks anyway —
  * and removes the one source of frame-to-frame churn worth removing; the rest
  * of #71 §5 is handled by comparing pixels on export rather than by freezing.
+ *
+ * Scoped to the elements that can actually show a caret: a universal selector
+ * forces a full style recalculation, which measurably slows the capture on a
+ * large DOM (~17ms on a 12k-node page) for no benefit.
  */
-const STILL_FREEZE_CSS = '*,*::before,*::after{caret-color:transparent!important}';
+const STILL_FREEZE_CSS = 'input,textarea,[contenteditable]{caret-color:transparent!important}';
 
 /**
  * Capture a still. `target`, when given and cropping is on, clips to that

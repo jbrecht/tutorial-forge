@@ -774,7 +774,12 @@ try {
         chapters: false,
         ...(stills ? { stills: { capture: 'after' as const } } : {}),
       });
-      return { out, totalMs: r.manifest.totalDurationMs, outputMs: r.outputDurationMs };
+      return {
+        out,
+        totalMs: r.manifest.totalDurationMs,
+        outputMs: r.outputDurationMs,
+        stepLengths: r.manifest.steps.map((st) => st.endMs - st.startMs),
+      };
     };
 
     const plain = await armFor(false);
@@ -791,9 +796,54 @@ try {
       outputDrift < 120,
       `--stills must not lengthen the output (plain ${plain.outputMs}ms vs stills ${withStills.outputMs}ms)`,
     );
-    console.log(
-      `e2e OK [stills-timing-parity]: ${plain.totalMs}ms vs ${withStills.totalMs}ms recorded (#71 §3)`,
+    // Per-step, not just totals: measured drift on a passing build is <=3ms, so
+    // one frame (40ms) is 10x headroom and still catches a per-step leak that
+    // the loose total tolerance would hide.
+    const worstStep = Math.max(
+      ...plain.stepLengths.map((ms, i) => Math.abs((withStills.stepLengths[i] ?? ms) - ms)),
     );
+    assert.ok(
+      worstStep < 40,
+      `no step may grow by a frame with --stills (worst ${worstStep}ms: ${plain.stepLengths} vs ${withStills.stepLengths})`,
+    );
+    console.log(
+      `e2e OK [stills-timing-parity]: ${plain.totalMs}ms vs ${withStills.totalMs}ms recorded, worst step Δ${worstStep}ms (#71 §3)`,
+    );
+  }
+
+  // #71 §3 — a step whose hold cannot absorb its capture *will* lengthen the
+  // video. That is a documented limit, not a bug, so pin the behaviour we
+  // promise instead: the author is told, by step name.
+  {
+    const noSlack = tutorial('No slack', [
+      step('Go.', async (page) => {
+        await page.getByRole('link', { name: 'Events' }).first().click();
+        await page.waitForTimeout(1200); // action dominates; nothing to absorb a capture
+      }, { id: 'tight', settleMs: 0 }),
+    ], { id: 'no-slack-stills' });
+
+    // logger.warn writes straight to stderr, so intercept there.
+    const warnings: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+      warnings.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
+      return (originalWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
+    }) as typeof process.stderr.write;
+    try {
+      await render(noSlack, adapter, {
+        tts: SilentProvider(),
+        output: join(outDir, 'no-slack.mp4'),
+        workDir: join(outDir, 'work-no-slack'),
+        ttsCacheDir: join(outDir, 'tts-cache'),
+        phase: 'record',
+        stills: true,
+      });
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    const overrun = warnings.find((w) => w.includes('no hold slack'));
+    assert.ok(overrun?.includes('tight'), `the slack-free step is named in a warning (got: ${warnings.join(' | ')})`);
+    console.log('e2e OK [stills-no-slack-warning]: author is told which step drifted (#71 §3)');
   }
 
   // #71 §2 — cropping clips to the step's focus target, and both variants of a
