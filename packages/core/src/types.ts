@@ -77,6 +77,25 @@ export interface Step<S = unknown> {
   /** Extra hold time (ms) after both narration and action complete. Default 400. */
   settleMs?: number;
   /**
+   * Alt text / caption for this step's exported still (`--stills`), overriding
+   * the narration. Narration is written to be *spoken over* a moving picture
+   * ("now we'll click Save…"), which often reads oddly as a static caption and
+   * can contradict the image outright. Set this when the narration doesn't
+   * describe what the screenshot shows.
+   */
+  alt?: string;
+  /**
+   * Which frame `--stills` exports for this step, overriding the render's
+   * `stills.capture`:
+   *
+   * - `'before'` — after the cursor anchors on the focus target, *before* the
+   *   action runs. The right choice for "click this" steps: the control is
+   *   still on screen with the cursor on it.
+   * - `'after'` — the settled end-of-step frame. The right choice for steps
+   *   whose point is the *result* ("the draft now appears in the list").
+   */
+  still?: 'before' | 'after';
+  /**
    * Opt this step out of the load-time pedagogy lints (see {@link LintOptions})
    * — for an intentionally long narration or a deliberately multi-action step.
    * Lints are warnings only and never fail a render; this just silences them.
@@ -234,7 +253,19 @@ export interface RenderOptions {
    * callout ring. Works under `--phase record`, so `phase: 'record'` + `stills`
    * produces the image set with no TTS and no ffmpeg.
    */
-  stills?: boolean | { steps?: string; markdown?: boolean };
+  stills?:
+    | boolean
+    | {
+        steps?: string;
+        markdown?: boolean;
+        /**
+         * Which frame to export per step. `'before'` (default) captures after
+         * the cursor anchors on the focus target but before the action runs —
+         * what a "click this" screenshot needs. `'after'` is the settled
+         * end-of-step frame. Per-step `Step.still` wins.
+         */
+        capture?: 'before' | 'after';
+      };
   /**
    * Emit chapter markers (#35): an MP4 chapter track plus `.chapters.vtt` and
    * `.chapters.txt` sidecars, derived from per-step boundaries, so learners can
@@ -262,6 +293,10 @@ export interface CalloutRecord {
 export interface ManifestStep {
   id: string;
   narration: string;
+  /** Step.alt, when set — the still's caption overrides the narration. */
+  alt?: string;
+  /** Step.still, when set — which frame this step's still exports. */
+  still?: 'before' | 'after';
   audioFile: string | null;
   /** 0 for silent steps */
   audioDurationMs: number;

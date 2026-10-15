@@ -96,3 +96,25 @@ describe('resolveStillsOption (#71)', () => {
     expect(resolveStillsOption({ stillsSteps: 'save' }, true)).toEqual({ steps: 'save' });
   });
 });
+
+describe('resolveStillsOption — capture flag (#71)', () => {
+  it('maps --stills-capture onto the config', () => {
+    expect(resolveStillsOption({ stillsCapture: 'after' }, undefined)).toEqual({ capture: 'after' });
+    expect(resolveStillsOption({ stillsCapture: 'before' }, { markdown: false })).toEqual({
+      capture: 'before',
+      markdown: false,
+    });
+  });
+
+  it('rejects an unknown capture value', () => {
+    expect(() => resolveStillsOption({ stillsCapture: 'sideways' }, undefined)).toThrow(
+      /Invalid --stills-capture "sideways" \(expected before \| after\)/,
+    );
+  });
+
+  it('combines flags and still lets config supply the rest', () => {
+    expect(
+      resolveStillsOption({ stillsSteps: 'save', stillsCapture: 'after' }, { markdown: false }),
+    ).toEqual({ steps: 'save', capture: 'after', markdown: false });
+  });
+});

@@ -9,17 +9,19 @@ import { ensureDir, exists } from '../util/fs.js';
  * captures as a durable, named artifact, so a render doubles as the
  * screenshot source for help documentation.
  *
- * The frames come from record's settled end-of-step screenshots
- * (workDir/steps/<id>.png) — the same ones the contact sheet assembles — so
- * this phase is pure file plumbing: select, copy, index. The index is the
- * point: narration is already written alt text, so a docs author gets
- * captioned images that stay in sync with the video's script.
+ * Record captures up to two frames per step — the pre-action one
+ * (workDir/steps/<id>@before.png), taken with the cursor on the focus target,
+ * and the settled end-of-step one (workDir/steps/<id>.png, also what the
+ * contact sheet assembles). This phase is file plumbing over those: select a
+ * variant, copy, index. The index is the point: a step's `alt` (or its
+ * narration) becomes the caption, so a docs author gets captioned images that
+ * stay in sync with the tutorial.
  *
- * Scope notes (see #71): stills are the full, un-zoomed viewport (zoom is an
- * ffmpeg filter applied later in post) and carry the fake cursor but no
- * callout ring (the ring self-removes long before the settled frame). They
- * come out at 2x the CSS viewport, deterministically, from record's
- * `deviceScaleFactor: 2`.
+ * Scope notes (see #71): zoom never applies (it is an ffmpeg filter applied
+ * later in post); stills carry the fake cursor but no callout ring (it
+ * self-removes well before either capture point). A full-frame still is 2x the
+ * CSS viewport from record's `deviceScaleFactor: 2`; under `crop` each image is
+ * its own target's size instead.
  */
 
 export interface StillsConfig {
@@ -30,9 +32,19 @@ export interface StillsConfig {
   steps?: string;
   /** Also write index.md with paste-ready markdown image snippets. Default true. */
   markdown?: boolean;
+  /**
+   * Which frame to export per step. `'before'` (default) is the pre-action
+   * frame — what a "click this" screenshot needs. `'after'` is the settled
+   * end-of-step frame, for steps whose point is the result. Per-step
+   * `Step.still` overrides this.
+   */
+  capture?: 'before' | 'after';
 }
 
-export const DEFAULT_STILLS: Required<Omit<StillsConfig, 'steps'>> = { markdown: true };
+export const DEFAULT_STILLS: Required<Omit<StillsConfig, 'steps'>> = {
+  markdown: true,
+  capture: 'before',
+};
 
 export interface StillEntry {
   /** 1-based position in the tutorial (not in the selection). */
@@ -41,7 +53,7 @@ export interface StillEntry {
   narration: string;
   /** Absolute path to record's screenshot; may not exist (skipped if missing). */
   source: string;
-  /** Basename written into the stills dir, e.g. "03-set-status.png". */
+  /** Basename written into the stills dir, e.g. "save.png" or "03-save.png". */
   file: string;
   /**
    * Whether *this* recording pass produced a frame for the step — true only for
@@ -69,6 +81,11 @@ export interface StillIndexEntry {
  * docs repo. Returns [] when there is no readable previous index, which makes
  * the export purely additive — the safe direction.
  */
+/** True when this step published a still this run, but under a different filename. */
+function renamedAway(previous: StillIndexEntry, present: StillEntry[]): boolean {
+  return present.some((e) => e.id === previous.id && e.file !== previous.file);
+}
+
 async function readPreviousIndex(outDir: string): Promise<StillIndexEntry[]> {
   try {
     const raw = await readFile(join(outDir, 'index.json'), 'utf8');
@@ -118,9 +135,8 @@ export function stillsDir(output: string): string {
  * selection, so a step's filename is identical whether it was exported alone
  * or as part of the whole set.
  */
-export function stillFileName(index: number, id: string, totalSteps: number): string {
-  const width = Math.max(2, String(totalSteps).length);
-  return `${String(index).padStart(width, '0')}-${fileSafeId(id)}.png`;
+export function stillFileName(id: string): string {
+  return `${fileSafeId(id)}.png`;
 }
 
 /**
@@ -209,22 +225,56 @@ export function stillsEntries(
   workDir: string,
   steps?: string,
   tutorialStepIds: string[] = manifest.steps.map((s) => s.id),
+  config: StillsConfig = {},
 ): StillEntry[] {
-  const total = tutorialStepIds.length;
-  const recordedById = new Map(manifest.steps.map((s) => [s.id, s.narration]));
-  return selectStillStepIds(tutorialStepIds, manifest.tutorialId, steps).map((i) => {
+  const defaultMode = config.capture ?? DEFAULT_STILLS.capture;
+  const recorded = new Map(manifest.steps.map((s) => [s.id, s]));
+
+  const entries: StillEntry[] = selectStillStepIds(tutorialStepIds, manifest.tutorialId, steps).map((i) => {
     const id = tutorialStepIds[i]!;
-    const recorded = recordedById.has(id);
+    const step = recorded.get(id);
+    const mode = assertCaptureMode(step?.still ?? defaultMode, id);
     return {
       index: i + 1,
       id,
-      narration: recordedById.get(id) ?? '',
-      source: join(workDir, 'steps', `${id}.png`),
-      file: stillFileName(i + 1, id, total),
-      // A step absent from the manifest did not record in this pass.
-      recorded,
+      // Caption precedence: the step's explicit alt, else its narration (#71 §4).
+      narration: step?.alt ?? step?.narration ?? '',
+      // record writes the pre-action frame as <id>@before.png and the settled
+      // one as <id>.png. Both sides sanitise, so an awkward id can't point the
+      // export at a path record never wrote.
+      source: join(
+        workDir,
+        'steps',
+        mode === 'before' ? `${fileSafeId(id)}@before.png` : `${fileSafeId(id)}.png`,
+      ),
+      file: stillFileName(id),
+      recorded: step !== undefined,
     };
   });
+  // Check the whole tutorial, not just the selection: two colliding steps in
+  // separate subset exports would otherwise each succeed and silently write
+  // onto one file.
+  assertNoFilenameCollisions(tutorialStepIds, manifest.tutorialId);
+  return entries;
+}
+
+/**
+ * `filenames: 'id'` drops the index prefix that used to guarantee uniqueness,
+ * and `fileSafeId` can map two distinct ids onto one name ("a b" and "a-b").
+ * Fail loudly rather than silently overwriting one still with another.
+ */
+export function assertNoFilenameCollisions(tutorialStepIds: string[], tutorialId: string): void {
+  const seen = new Map<string, string>();
+  for (const id of tutorialStepIds) {
+    const file = stillFileName(id);
+    const prior = seen.get(file);
+    if (prior !== undefined && prior !== id) {
+      throw new Error(
+        `Steps "${prior}" and "${id}" in tutorial "${tutorialId}" both produce the still "${file}". Rename one of them.`,
+      );
+    }
+    seen.set(file, id);
+  }
 }
 
 export interface StillsIndexMeta {
@@ -297,6 +347,50 @@ export function stillsIndexJson(entries: StillIndexEntry[], meta: StillsIndexMet
   );
 }
 
+/**
+ * Section heading for a still: the caption's first sentence reads far better
+ * than the raw step id ("## 4. continue"), which is an internal handle (#71 §4).
+ * Falls back to the id when there is no caption.
+ */
+function headingFor(e: StillIndexEntry): string {
+  const flat = (e.narration ?? '').replace(/\s+/g, ' ').trim();
+  const base = flat ? firstSentence(flat) : e.id;
+  return base;
+}
+
+/**
+ * The caption's opening sentence, for a section heading. Splits on terminal
+ * punctuation followed by a capital, so "e.g. report.pdf" doesn't end the
+ * sentence, and truncates on grapheme boundaries so an emoji or combining mark
+ * is never cut in half.
+ */
+function firstSentence(text: string): string {
+  const match = /^(.*?[.!?\u3002])(?=\s+[\p{Lu}\p{Lo}])/u.exec(text);
+  const sentence = (match?.[1] ?? text).trim();
+  const stripped = sentence.replace(/[.\u3002]+$/u, '');
+  return truncateGraphemes(stripped, 60).replace(/[|\[\]#`<>]/g, '');
+}
+
+/** Truncate to at most `max` user-perceived characters, appending an ellipsis. */
+function truncateGraphemes(text: string, max: number): string {
+  const units =
+    typeof Intl !== 'undefined' && 'Segmenter' in Intl
+      ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((g) => g.segment)
+      : [...text];
+  if (units.length <= max) return text;
+  return `${units.slice(0, max - 1).join('').trimEnd()}…`;
+}
+
+/** Guard the mode for callers who bypass the zod-validated config (the programmatic API). */
+function assertCaptureMode(mode: unknown, stepId: string): 'before' | 'after' {
+  if (mode !== 'before' && mode !== 'after') {
+    throw new Error(
+      `Invalid stills capture mode ${JSON.stringify(mode)} for step "${stepId}" (expected before | after)`,
+    );
+  }
+  return mode;
+}
+
 /** Escape text for use as markdown image alt text (single-line, bracket-safe). */
 function altText(narration: string, id: string): string {
   const flat = narration.replace(/\s+/g, ' ').trim();
@@ -314,14 +408,14 @@ export function stillsIndexMarkdown(entries: StillIndexEntry[], meta: StillsInde
     `# ${heading} — screenshots`,
     '',
     `Generated by tutorial-forge from tutorial \`${meta.tutorialId}\`${meta.lang ? ` (${meta.lang})` : ''}.`,
-    'Alt text is each step’s narration — edit freely once pasted into your docs.',
+    'Alt text comes from each step’s `alt`, falling back to its narration — a draft caption, not a finished one. Edit freely once pasted into your docs.',
     '',
   ];
   for (const e of entries) {
     // encodeURI as belt-and-braces: fileSafeId already removes the characters
     // that would break a markdown link, but the href should survive either way.
     lines.push(
-      `## ${e.index}. ${e.id}`,
+      `## ${e.index}. ${headingFor(e)}`,
       '',
       `![${altText(e.narration, e.id)}](${encodeURI(e.file)})`,
       '',
@@ -405,14 +499,19 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
   }
 
   // Reconcile against the previous export.
-  const freshIds = new Set(present.map((e) => e.id));
+  const freshFiles = new Set(present.map((e) => e.file));
   const tutorialIds = new Set(input.tutorialStepIds ?? entries.map((e) => e.id));
   const carried: StillIndexEntry[] = [];
   let pruned = 0;
   for (const p of previous) {
-    if (freshIds.has(p.id)) continue; // just rewritten
-    if (!tutorialIds.has(p.id)) {
-      // The step is gone from the tutorial — its still is an orphan.
+    if (freshFiles.has(p.file)) continue; // just rewritten
+    // Keying on the *file*, not the id, is what catches a still whose name
+    // changed — switching filenames: 'indexed' → 'id', or capture 'both' → one
+    // variant. Keyed on id those files survived on disk while dropping out of
+    // the index, leaving a docs page pointing at a frozen screenshot forever.
+    if (!tutorialIds.has(p.id) || renamedAway(p, present)) {
+      // Either the step left the tutorial, or this step published under a
+      // different name this run — the old file is an orphan either way.
       try {
         await unlink(join(outDir, p.file));
         pruned++;
@@ -425,12 +524,26 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
     if (await exists(join(outDir, p.file))) carried.push(p);
   }
 
-  // Stamp the real pixel dimensions from what we just wrote.
-  const pixelSize = (await pngSize(files[0]!)) ?? meta.pixelSize;
-  const indexMeta: StillsIndexMeta = { ...meta, pixelSize };
+  // Stamp the real pixel dimensions — but only when every still shares them.
+  // Under crop each image has its own size, and a single number would be a lie
+  // an author might hardcode.
+  const sizes = await Promise.all(files.map((f) => pngSize(f)));
+  const first = sizes[0];
+  const uniform =
+    first !== undefined &&
+    sizes.every((d) => d !== undefined && d.width === first.width && d.height === first.height);
+  const indexMeta: StillsIndexMeta = {
+    ...meta,
+    ...(uniform ? { pixelSize: first } : { pixelSize: undefined }),
+  };
 
   const indexed: StillIndexEntry[] = [
-    ...present.map((e) => ({ index: e.index, id: e.id, file: e.file, narration: e.narration })),
+    ...present.map((e) => ({
+      index: e.index,
+      id: e.id,
+      file: e.file,
+      narration: e.narration,
+    })),
     ...carried,
   ].sort((a, b) => a.index - b.index);
 
@@ -452,5 +565,13 @@ export async function exportStills(input: ExportStillsInput): Promise<StillsResu
     }
   }
 
-  return { dir: outDir, files, indexJsonPath, indexMarkdownPath, missing, kept: carried.length, pruned };
+  return {
+    dir: outDir,
+    files,
+    indexJsonPath,
+    indexMarkdownPath,
+    missing,
+    kept: carried.length,
+    pruned,
+  };
 }

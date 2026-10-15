@@ -116,3 +116,32 @@ describe('availableLanguages', () => {
     expect(availableLanguages(tutorial('x', [step('a', noop)], { id: 'x' }))).toEqual(['en']);
   });
 });
+
+describe('still caption localization (#71 §4)', () => {
+  const base = {
+    id: 't',
+    title: 'T',
+    steps: [{ id: 'open', narration: 'Open it.', alt: 'The dashboard.', run: async () => {} }],
+  };
+
+  it('translates a step alt from the "<id>.alt" key', () => {
+    const localized = localizeTutorial(
+      { ...base, translations: { es: { open: 'Ábrelo.', 'open.alt': 'El panel.' } } } as never,
+      'es',
+    );
+    expect(localized.steps[0]!.narration).toBe('Ábrelo.');
+    expect(localized.steps[0]!.alt).toBe('El panel.');
+  });
+
+  it('keeps the source alt when only the narration is translated', () => {
+    const localized = localizeTutorial({ ...base, translations: { es: { open: 'Ábrelo.' } } } as never, 'es');
+    expect(localized.steps[0]!.alt).toBe('The dashboard.');
+  });
+
+  it('does not warn that an alt key matches no step', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    localizeTutorial({ ...base, translations: { es: { open: 'Ábrelo.', 'open.alt': 'El panel.' } } } as never, 'es');
+    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/match no step/);
+    warn.mockRestore();
+  });
+});

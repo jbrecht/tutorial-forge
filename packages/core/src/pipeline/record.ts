@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { writeFile, readFile } from 'node:fs/promises';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { createRecorder, type CaptureInfo, type RecorderKind } from './recorder.js';
-import type { CalloutRecord, FailureArtifacts, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
+import type { CalloutRecord, FailureArtifacts, Step, TimingManifest, Tutorial, TutorialAdapter } from '../types.js';
 import { StepError } from '../types.js';
 import { ConsoleCapture } from '../browser/console.js';
 import { stepId } from '../spec.js';
@@ -13,6 +13,7 @@ import { CALLOUT_INIT_SCRIPT } from '../browser/callout.js';
 import { RecordingClock, stepHoldUntilMs } from '../browser/timing.js';
 import { instrumentPage } from '../browser/instrument.js';
 import { ensureDir, removeDir } from '../util/fs.js';
+import { fileSafeId } from './stills.js';
 import { logger } from '../util/logger.js';
 
 export const RAW_VIDEO_FILE = 'raw.webm';
@@ -20,6 +21,17 @@ export const MANIFEST_FILE = 'manifest.json';
 /** Calibration flash duration; the post phase must never trim inside it. */
 export const FLASH_MS = 120;
 const FINAL_HOLD_MS = 1000;
+/**
+ * Wall-clock reserved inside a step's hold for the settled still capture, so
+ * the shot happens *during* dead time instead of extending the step (#71 §3).
+ * A `--stills` render must produce the same video as one without it; measured
+ * capture cost is ~65-100ms, so this leaves healthy margin.
+ */
+const STILL_SHOT_BUDGET_MS = 300;
+/** The callout ring self-removes this long after a click; a settled frame must be later. */
+const CALLOUT_CLEAR_MS = 250;
+/** Overrun past the hold that's worth telling the author about. */
+const STILL_OVERRUN_WARN_MS = 20;
 /** Gap after the flash before setup, so the trim point can't land in the flash. */
 const POST_FLASH_HOLD_MS = 400;
 
@@ -41,6 +53,13 @@ export interface RecordPhaseOptions {
    * success, for the contact sheet (#9). Implied by debug.
    */
   screenshots?: boolean;
+  /**
+   * Also capture the pre-action frame (steps/<id>@before.png) for the stills
+   * export (#71): taken after the cursor anchors on the focus target but
+   * before the action runs, so a "click this" still actually shows the control.
+   * `crop` clips to the focus target plus padding.
+   */
+  stills?: { capture: 'before' | 'after' };
 }
 
 /**
@@ -166,10 +185,21 @@ export async function runRecordPhase<S = unknown>(
 
       if (opts.debug) await debugScreenshot(page, opts.workDir, `${id}-before`);
       const actionStartMs = clock.now();
+      // Wall-clock this step spent on still captures. Subtracted from the
+      // action window when pacing, so enabling stills can't lengthen the step
+      // (#71 §3) — the hold absorbs it instead.
+      let captureOverheadMs = 0;
       try {
         // Anchor the cursor on the step's focus control before its own action,
         // so narration about "this control" has a visual focus (#10).
         await anchorFocus(step, instrumented as Page, ctx, id);
+        if (wantsBefore(step, opts)) {
+          const t0 = clock.now();
+          // The pre-action frame (#71 §1): the control is still on screen with
+          // the cursor on it, which is what a "click this" screenshot needs.
+          await captureStill(page, opts.workDir, `${fileSafeId(id)}@before`);
+          captureOverheadMs += clock.now() - t0;
+        }
         await step.run(instrumented as Page, ctx);
         await step.waitFor?.(instrumented as Page, ctx);
         await waitForSettle(step, page, id);
@@ -188,19 +218,45 @@ export async function runRecordPhase<S = unknown>(
         startMs,
         leadInMs: opts.leadInMs,
         audioDurationMs: audio.audioDurationMs,
-        actionEndMs,
+        // Pace against a capture-free action window so the step ends where it
+        // would without stills; the real actionEndMs still goes in the manifest.
+        actionEndMs: actionEndMs - captureOverheadMs,
         settleMs: step.settleMs ?? 400,
       });
+
+      // The settled frame (contact sheet #9, and the 'after' still) is taken
+      // *inside* the hold rather than after it: shoot with a budget to spare,
+      // then wait out whatever is left, so the step still ends at holdUntil.
+      const wantSettled = opts.screenshots || wantsAfter(step, opts);
+      if (wantSettled) {
+        // Shoot as early as the frame is actually settled (the callout ring is
+        // gone ~200ms after the action), not at a fixed offset from the end —
+        // that maximises the slack left to absorb a slow capture.
+        const settledAt = actionEndMs + Math.min(step.settleMs ?? 400, CALLOUT_CLEAR_MS);
+        const shotAt = Math.min(holdUntil - STILL_SHOT_BUDGET_MS, Math.max(settledAt, holdUntil - STILL_SHOT_BUDGET_MS));
+        const untilShot = Math.max(settledAt, shotAt) - clock.now();
+        if (untilShot > 0) await page.waitForTimeout(untilShot);
+        await captureStill(page, opts.workDir, fileSafeId(id));
+      }
       const remaining = holdUntil - clock.now();
       if (remaining > 0) await page.waitForTimeout(remaining);
-
-      // Settled end-of-step frame for the contact sheet (#9): captured after
-      // the hold, so it matches what the viewer sees at the end of the step.
-      if (opts.screenshots) await debugScreenshot(page, opts.workDir, id);
+      // Any capture this step took can overrun the hold, not just the settled
+      // one: with the default capture:'before' there is no settled shot at all,
+      // and that was the regime where the drift went unreported.
+      else if ((wantSettled || captureOverheadMs > 0) && remaining < -STILL_OVERRUN_WARN_MS) {
+        // The capture didn't fit in this step's hold, so it lengthened the
+        // recording. Say so: silent drift is what made this a bug the first time.
+        logger.warn(
+          `stills: step "${id}" had no hold slack — its capture added ~${Math.round(-remaining)}ms to the video. ` +
+            'Give the step a longer settleMs (or narration) to absorb it.',
+        );
+      }
 
       manifestSteps.push({
         id,
         narration: step.narration,
+        ...(step.alt !== undefined ? { alt: step.alt } : {}),
+        ...(step.still !== undefined ? { still: step.still } : {}),
         audioFile: audio.audioFile,
         audioDurationMs: audio.audioDurationMs,
         startMs,
@@ -293,6 +349,48 @@ async function captureFailure(
   }
   logger.error(`record: step "${id}" failed — artifacts in ${opts.workDir}`);
   return artifacts;
+}
+
+/** Which still frame(s) this step needs: the step's own override wins over the render default. */
+function stillMode(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): 'before' | 'after' | null {
+  if (!opts.stills) return null;
+  return step.still ?? opts.stills.capture;
+}
+
+function wantsBefore(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolean {
+  return stillMode(step, opts) === 'before';
+}
+
+function wantsAfter(step: Pick<Step, 'still'>, opts: RecordPhaseOptions): boolean {
+  return stillMode(step, opts) === 'after';
+}
+
+/**
+ * Applied for the duration of a still capture only. Deliberately minimal: the
+ * capture now happens *inside* the recorded hold, and Playwright's `style`
+ * option really does inject a <style> tag into the live page, so anything more
+ * aggressive (pausing animations, killing transitions) would show up in the
+ * video as a 2-3 frame stutter. Hiding the caret is safe — it blinks anyway —
+ * and removes the one source of frame-to-frame churn worth removing; the rest
+ * of #71 §5 is handled by comparing pixels on export rather than by freezing.
+ *
+ * Scoped to the elements that can actually show a caret: a universal selector
+ * forces a full style recalculation, which measurably slows the capture on a
+ * large DOM (~17ms on a 12k-node page) for no benefit.
+ */
+const STILL_FREEZE_CSS = 'input,textarea,[contenteditable]{caret-color:transparent!important}';
+
+/** Capture a still. Never throws: a diagnostic must not break the render. */
+async function captureStill(page: Page, workDir: string, name: string): Promise<void> {
+  try {
+    await ensureDir(join(workDir, 'steps'));
+    const path = join(workDir, 'steps', `${name}.png`);
+    await page.screenshot({ path, style: STILL_FREEZE_CSS });
+  } catch (err) {
+    // Never fail the render over a still, but don't hide the cause either —
+    // it surfaces otherwise only as an unexplained "no frame for step X".
+    logger.warn(`stills: capture failed for "${name}": ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 async function debugScreenshot(page: Page, workDir: string, name: string): Promise<void> {
