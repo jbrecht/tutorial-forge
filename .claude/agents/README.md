@@ -22,7 +22,7 @@ different axes — *is it correct*, *is it well-tested*, *does it watch well*, *
 | **qa-engineer** | after a feature lands, or to audit a feature area's coverage. | a prioritized test-gap report across the render pipeline's author journeys (timing regimes, filtergraph composition, i18n, TTS, recording, GIF windowing); picks vitest vs. e2e per gap. Writes tests when asked. |
 | **designer** | after changing anything that affects how a render looks or reads, or to audit how a tutorial watches to a human. | critique of the **output experience** — video pacing, callout/cursor/zoom placement, caption legibility + the `.srt`, GIF exports, and CLI ergonomics (`doctor`, progress, `StepError`). Watches a real render; doesn't read just the code. |
 | **performance-engineer** | auditing render speed / resource use, before a large batch regeneration (e.g. umami's set), or when a render feels slow. | a prioritized, **measured** optimization report — a per-phase time/CPU/memory budget (cold vs warm cache, single vs batch), findings ranked by quantified saving × confidence, separating safe wins from output trade-offs. Advisory; measures and recommends, doesn't change behavior or file issues. |
-| **release-reviewer** | before `pnpm publish` of a new version. | release-hygiene findings — version-bump consistency across the three places, semver of the public surface, the packed tarball surface, no leaked secrets/stray files, CHANGELOG + docs. Read-only. **This replaces a security-reviewer role** — TF has no server/auth/payment surface; its risk is shipping a broken or leaky npm package. |
+| **publish-reviewer** | before `pnpm publish` of a new version. | release-hygiene findings — version-bump consistency across the three places, semver of the public surface, the packed tarball surface, no leaked secrets/stray files, CHANGELOG + docs. Read-only. **This replaces a security-reviewer role** — TF has no server/auth/payment surface; its risk is shipping a broken or leaky npm package. |
 
 ## How they divide the work
 
@@ -41,7 +41,7 @@ The five reviewers are deliberately **different axes on the same render**, not r
   where wall-clock actually goes (TTS / record / post), encode + filtergraph efficiency,
   cache hit-rate, and parallelism across a batch. It measures first and never trades
   correctness, A/V sync, or watchability for speed.
-- **release-reviewer** asks *is it safe to ship* — independent of whether the feature is
+- **publish-reviewer** asks *is it safe to ship* — independent of whether the feature is
   good, will the published `tutorial-forge` / `tutorial-forge-cli` packages be correctly
   versioned, completely packed, and leak-free.
 
@@ -69,14 +69,14 @@ The five reviewers are deliberately **different axes on the same render**, not r
   gap, a designer critique, or an instructional-designer recommendation can become a filed
   issue) but owns *what/when*, not *how* — it files new issues and recommends closures; it
   never edits existing ones.
-- The **release-reviewer** is the last gate before publish; the **code-reviewer**'s
+- The **publish-reviewer** is the last gate before publish; the **code-reviewer**'s
   public-API/semver findings feed directly into its version-bump check.
 
 ## Note on the missing security-reviewer
 
 Sibling projects in this family (pilot-forge, umami) carry a `security-reviewer`. TF
-intentionally does **not** — see the `release-reviewer` frontmatter. There's no runtime
+intentionally does **not** — see the `publish-reviewer` frontmatter. There's no runtime
 attack surface to audit here (no server, auth, or payment path); the real pre-ship risk is
-package hygiene, which the release-reviewer owns. If a future feature adds a genuine
+package hygiene, which the publish-reviewer owns. If a future feature adds a genuine
 runtime trust boundary (e.g. fetching remote specs/assets), revisit that decision rather
-than stretching the release-reviewer to cover it.
+than stretching the publish-reviewer to cover it.
