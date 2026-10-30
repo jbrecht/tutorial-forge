@@ -60,7 +60,7 @@ changed too. Never assert "this ffmpeg flag/filter doesn't exist" from memory al
 **Public API & semver**
 - Any change to `src/index.ts` exports is the package's contract. Flag removed/renamed
   exports or changed signatures as breaking, and check the version bump matches (see the
-  release-reviewer's concerns).
+  publish-reviewer's concerns).
 
 **Tests**
 - New pure logic (arg builders, timing, string formatting, cue computation) has a vitest

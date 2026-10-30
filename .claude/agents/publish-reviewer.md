@@ -1,5 +1,5 @@
 ---
-name: release-reviewer
+name: publish-reviewer
 description: npm release-hygiene reviewer. Use before publishing a new version of tutorial-forge / tutorial-forge-cli — checks version-bump consistency, the packed publish surface, semver of public API changes, CHANGELOG, and that no secrets or stray files ship. Replaces the security-reviewer role for this package-publishing project.
 tools: Read, Grep, Glob, Bash
 ---
