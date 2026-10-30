@@ -6,25 +6,27 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: Playwright installs Chromium's system deps per
+    # OS release and refuses ones it doesn't know (1.60 fails on ubuntu-26.04).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       # Skip the expensive Chromium install + e2e render only when every changed
-      # file is docs/markdown/license — anything else runs the full gate.
+      # file is docs/markdown/license/.claude config — anything else runs the
+      # full gate. 'every' means a file must match ALL patterns, so `code` is
+      # "matches ** and none of the exclusions". Don't list positive patterns
+      # side by side under 'every': no file can match them all.
       - uses: dorny/paths-filter@v3
         id: changes
         with:
           predicate-quantifier: 'every'
           filters: |
-            docs_only:
-              - 'docs/**'
-              - '**/*.md'
-              - 'LICENSE'
-              - 'COMMERCIAL.md'
-              # Agent/config files under the .claude dot-directory don't affect a
-              # render. Listed explicitly because '**/*.md' (picomatch dot:false)
-              # won't descend into dot-directories.
-              - '.claude/**'
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!LICENSE'
+              - '!.claude/**'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -39,10 +41,10 @@ jobs:
       # Unit tests across all packages (core + cli vitest; example-app is e2e-only).
       - run: pnpm -r test
       - name: Install Playwright Chromium
-        if: steps.changes.outputs.docs_only != 'true'
+        if: steps.changes.outputs.code == 'true'
         run: pnpm --filter tutorial-forge-example-app exec playwright install --with-deps chromium
       - name: E2E render against example app
-        if: steps.changes.outputs.docs_only != 'true'
+        if: steps.changes.outputs.code == 'true'
         run: pnpm --filter tutorial-forge-example-app e2e
       - name: Publish dry-run
         run: pnpm --filter tutorial-forge --filter tutorial-forge-cli publish --dry-run --no-git-checks
