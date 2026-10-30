@@ -194,32 +194,43 @@ Pair it with `--phase record` for a **TTS-free** whole-tutorial check: `tutorial
 
 ## Screenshots for documentation
 
-The same settled per-step frames the contact sheet is built from can be exported as standalone images, so one tutorial is both your video **and** the screenshot set for your help docs — written once, re-rendered whenever the UI changes.
+The per-step frames a render captures can be exported as standalone images, so one tutorial is both your video **and** the screenshot set for your help docs — written once, re-rendered whenever the UI changes.
 
 ```sh
 tutorial-forge render --only my-tutorial --stills
 # → dist/my-tutorial.mp4
-# → dist/my-tutorial-stills/01-open-dashboard.png
+# → dist/my-tutorial-stills/open-dashboard.png
 #   …
 #   dist/my-tutorial-stills/index.json
 #   dist/my-tutorial-stills/index.md
 ```
 
-Each PNG is index-prefixed with its step id, so a directory listing reads in tutorial order. Characters that would break a filename or a markdown link (spaces, `#`, `?`, path separators) are collapsed to `-`, so a step id like `save draft` yields `01-save-draft.png`. The prefix comes from the step's position in the *tutorial*, not in your selection — `03-save.png` is `03-save.png` whether you exported the whole set or just that one step.
+Each PNG is named for its step id, and that name is **stable**: inserting a step earlier in the tutorial doesn't rename it, so a link from your docs keeps working. Tutorial order lives in `index.json`. Characters that would break a filename or markdown link (spaces, `#`, `?`, path separators) collapse to `-`, so `save draft` yields `save-draft.png`; two steps whose names would collide fail the render — before the browser launches — rather than silently overwriting each other.
 
-**The index is the point.** Your narration is already the caption, so `index.md` is paste-ready markdown with alt text filled in:
+**The index is the point.** Your narration is already a draft caption, so `index.md` is paste-ready markdown with alt text filled in:
 
 ```markdown
-## 3. save
+## 3. Click Create event
 
-![Click Create event. Saving takes a moment, and the new event appears in the list as a draft.](03-save.png)
+![Click Create event. Saving takes a moment, and the new event appears in the list as a draft.](save.png)
 ```
 
-`index.json` carries the same data for a docs pipeline to consume: `tutorialId`, the CSS `viewport`, the actual `pixelSize`, and per-still `index`/`id`/`file`/`narration` — plus `title` and `lang` when the tutorial has them. A localized render (`--lang es`) writes its own `<id>.es-stills/` directory with translated alt text and the *same* filenames, so a docs site can swap one directory for another per locale. It is written without a timestamp, so a docs repo that commits its stills only sees a diff when an image or its narration actually changed.
+Narration is written to be *spoken over* a moving picture, though, so it won't always describe a static frame. Set `alt` on a step to override the caption without touching what gets spoken:
+
+```ts
+step('Click Create event. Saving takes a moment.', run, {
+  id: 'save',
+  alt: 'The New event dialog, filled in, with Create event ready to click.',
+})
+```
+
+`index.json` carries the same data for a docs pipeline to consume: `tutorialId`, the CSS `viewport`, the actual `pixelSize`, and per-still `index`/`id`/`file`/`narration` — plus `title` and `lang` when the tutorial has them. A localized render (`--lang es`) writes its own `<id>.es-stills/` directory with the *same* filenames, so a docs site can swap one directory per locale. Captions localize too: narration from the usual translation table, and `alt` from a `"<step-id>.alt"` key alongside it.
 
 **Re-exporting merges.** Regenerating one changed step (`--stills-steps save`) rewrites that still, leaves the rest in place, and rebuilds the index to cover everything present — so you don't lose eleven good images to fix one. A still whose step has left the tutorial entirely is removed, since the index would otherwise point at a file no step owns.
 
-Pruning is driven by the previous `index.json`, not by filename shape, so files tutorial-forge didn't write are never touched: annotate a still as `03-save-annotated.png`, drop in `2024-release.png`, keep your own `notes.md` — all safe.
+Pruning is driven by the previous `index.json`, not by filename shape, so files tutorial-forge didn't write are never touched: annotate a still as `save-annotated.png`, drop in `2024-release.png`, keep your own `notes.md` — all safe.
+
+> Stills are rewritten on every export, even when the screen didn't change. Chromium's output varies by a few least-significant bits between runs, so a docs repo that commits its stills will see a diff on each re-render.
 
 ### Only the frames you want
 
@@ -236,7 +247,7 @@ Persist either form in `forge.config.ts`:
 ```ts
 export default defineConfig({
   // …
-  stills: { steps: 'open-modal..create-event', markdown: false },
+  stills: { steps: 'open-modal..create-event', capture: 'before' },
 });
 ```
 
@@ -252,12 +263,15 @@ That is the fastest way to use tutorial-forge purely as a screenshot generator �
 
 ### What is in the frame
 
-- **Captured at the end of each step**, after the narration hold — the state the viewer is left looking at, not the state before the action.
-- **The fake cursor is present**, parked on the step's `focus` control (or its click target). Helpful for "click this" docs; set `cursor: false` in `forge.config.ts` if you want it gone (it leaves the video too).
-- **No callout ring.** The click highlight fades ~200ms after the action, long before the settled frame.
-- **No zoom.** `--zoom` is applied later as a video filter, so stills are always the full viewport.
-- **Exactly 2× the CSS viewport** — 3840×2160 for the default 1920×1080 render. That comes from the recording context's `deviceScaleFactor: 2`, a browser emulation setting rather than a property of your display, so you get the same dimensions on a retina laptop and a headless CI box. `index.json` records it as `pixelSize`, so you can safely hardcode dimensions in your docs. (It also means ~100KB per frame — downscale in your docs pipeline if that matters.)
-- **A screenshot per step is taken inside the recording window**, so a `--stills` render is measurably (not perceptibly) different from the same render without it: about 97ms per step, which works out to ~1.2% longer and ~7% larger on a 65-second render. Timings stay self-consistent — the frame is captured before the step's end is stamped, so there is no audio or subtitle drift — and it is the same cost `--contact-sheet` and `--debug` have always paid.
+- **Captured before the action**, right after the cursor anchors on the step's `focus` target — while the control you're telling the reader to click is still on screen. Capturing afterwards would show the *next* screen, putting a "click Continue" caption over the page Continue leads to. For steps whose point is the result ("the draft now appears in the list"), set `still: 'after'`; change the default for a whole render with `stills: { capture: 'after' }` or `--stills-capture after`.
+- **Set `focus` on the control you describe.** It anchors the cursor for the video anyway, and in a still it is what puts the cursor on the right thing.
+- **The fake cursor is present**, parked on the step's `focus` control. Helpful for "click this" docs; set `cursor: false` in `forge.config.ts` if you want it gone (it leaves the video too).
+- **No callout ring.** The click highlight fades ~200ms after the action, well before either capture point.
+- **The full viewport, un-zoomed.** `--zoom` is a post-phase video filter and never affects stills. At a typical docs column width a full 2× frame renders the UI at about half size, so you will often want to crop in your own docs pipeline.
+- **Exactly 2× the CSS viewport** — 3840×2160 for the default 1920×1080 render. That comes from the recording context's `deviceScaleFactor: 2`, a browser emulation setting rather than a property of your display, so you get the same dimensions on a retina laptop and a headless CI box. `index.json` records it as `pixelSize`. (It also means ~100KB per frame.)
+- **The video's length is unaffected.** Captures happen *inside* each step's existing hold, and the step is paced against a capture-free clock, so a `--stills` render produces the same frame count and duration as one without it. (`--contact-sheet` used to stretch every step by ~65–100ms and drift the subtitle cues with it; that is fixed too.)
+
+  Two limits are worth knowing. A step with **no hold to absorb the capture** — a long action under almost no narration, or `settleMs: 0` — is still lengthened by it; the render warns by name when that happens, so give the step more settle time. And a capture briefly stalls the page compositor, so on a step where something is animating at that instant the video can repeat a frame: the length is unchanged, but the output is not bit-identical.
 
 If a step fails mid-render you still get the stills for every step that completed — including when you passed `--stills-steps` spanning the step that failed — and the index describes only what was written, so there are no broken image links. Only frames from *that* recording pass are published: a reused work dir cannot leak a stale screenshot from an earlier run into a later export.
 

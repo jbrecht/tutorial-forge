@@ -20,31 +20,35 @@ Everything below is opt-in. Notes for existing consumers:
 
 ## 0.14.0 — documentation stills
 
-- **Export per-step screenshots for your help docs (`--stills`, #71).** A render already captures a settled frame per step; this publishes them next to the video, so one tutorial is both the video *and* the screenshot set for your documentation — re-rendered whenever the UI changes.
+- **Export per-step screenshots for your help docs (`--stills`, #71).** A render already captures a frame per step; this publishes them next to the video, so one tutorial is both the video *and* the screenshot set for your documentation — re-rendered whenever the UI changes.
 
   ```sh
   tutorial-forge render --only my-tutorial --stills
-  # → dist/my-tutorial-stills/01-open-dashboard.png …
+  # → dist/my-tutorial-stills/open-dashboard.png …
   #   dist/my-tutorial-stills/index.json
   #   dist/my-tutorial-stills/index.md
   ```
 
-  **The index is the point:** your narration is already the caption, so `index.md` is paste-ready markdown with alt text filled in, and `index.json` carries the same data (`tutorialId`, `viewport`, `pixelSize`, and per-still `index`/`id`/`file`/`narration`, plus `title`/`lang` when present) for a docs pipeline. It is written without a timestamp, so a docs repo that commits its stills only diffs when an image or its narration actually changed.
+  **The index is the point:** your narration is already a draft caption, so `index.md` is paste-ready markdown with alt text filled in, and `index.json` carries the same data (`tutorialId`, `viewport`, `pixelSize`, and per-still `index`/`id`/`file`/`narration`, plus `title`/`lang` when present) for a docs pipeline.
 
-  - `--stills-steps 'a..b,c'` (or `stills: { steps }` in config) exports a subset. Filename prefixes come from the step's position in the *tutorial*, so a name is stable whether exported alone or with the whole set. An id that doesn't exist is rejected **before the browser launches**, listing the valid ids.
+  - **Frames are captured before each step's action** (right after the cursor anchors on its `focus` target), so a "click Save" screenshot shows the Save button rather than the screen it leads to. Steps whose point is the result set `still: 'after'`; `stills: { capture }` or `--stills-capture` sets the render-wide default.
+  - **Stills are named by step id** (`save.png`), so inserting a step earlier in the tutorial doesn't rename files your docs link to. Order lives in `index.json`. Two steps whose names would collide fail the render before the browser launches.
+  - **`Step.alt`** overrides a still's caption, because narration is written to be spoken over motion and doesn't always describe a static frame. It localizes via a `"<step-id>.alt"` translation key, alongside the narration table.
+  - `--stills-steps 'a..b,c'` (or `stills: { steps }`) exports a subset. An id that doesn't exist is rejected **before the browser launches**, listing the valid ids; a selection matching nothing is an error rather than a silent no-op.
   - **Pairs with `--phase record`** for the whole image set with **no TTS and no ffmpeg** — the cheap way to use tutorial-forge purely as a screenshot generator. `--phase tts`/`post` can't record frames and say so rather than ignoring the flag.
-  - **Re-exporting merges.** Regenerating one changed step keeps the other stills and rebuilds the index over everything present. A still whose step has left the tutorial is removed — but pruning reads the previous `index.json` rather than matching filenames, so your own files in that directory (`03-save-annotated.png`, `notes.md`) are never touched.
-  - **A failed render still exports the steps that completed**, including when `--stills-steps` spans the step that failed, and the index lists only what was written — no broken links. Only frames from *that* recording pass are published, so a reused work dir can't leak a stale screenshot into a later export.
-  - **A stills failure never costs you the video.** If the directory can't be written (a file in the way, a read-only path, a full disk) the render warns and carries on to produce the MP4.
-  - A localized render writes its own `<id>.<lang>-stills/` directory with translated alt text and identical filenames, so a docs site can swap directories per locale.
+  - **Re-exporting merges.** Regenerating one changed step keeps the other stills and rebuilds the index over everything present. A still whose step has left the tutorial is removed — but pruning reads the previous `index.json` rather than matching filenames, so your own files in that directory (`save-annotated.png`, `notes.md`) are never touched.
+  - **A failed render still exports the steps that completed**, including when `--stills-steps` spans the step that failed, and the index lists only what was written. Only frames from *that* recording pass are published, so a reused work dir can't leak a stale screenshot into a later export.
+  - **A stills failure never costs you the video.** If the directory can't be written the render warns and carries on to produce the MP4.
 
-  Frames are the full **un-zoomed** viewport (`--zoom` is a post-phase filter), include the fake cursor, and carry no callout ring (it self-removes long before the settled frame). They come out at exactly **2× the CSS viewport** — 3840×2160 for the default 1920×1080 — from the recording context's `deviceScaleFactor: 2`, which is browser emulation rather than a display property, so the dimensions are identical on a retina laptop and headless CI.
+  Frames are the full **un-zoomed** viewport (`--zoom` is a post-phase filter), include the fake cursor, and carry no callout ring. They come out at exactly **2× the CSS viewport** — 3840×2160 for the default 1920×1080 — from the recording context's `deviceScaleFactor: 2`, which is browser emulation rather than a display property, so the dimensions are identical on a retina laptop and headless CI.
 
-  Cost, measured: ~97 ms per step, which is ~1.2% longer and ~7% larger output on a 65-second render, and 1.6 ms for the export itself. The same cost `--contact-sheet` has paid since 0.9.0; timings stay self-consistent, so there is no audio or subtitle drift.
+  **The flag doesn't change the video's length.** Captures happen inside each step's existing hold and the step is paced against a capture-free clock, so a `--stills` render has the same frame count and duration as one without it — verified per-step, per-subtitle-cue and per-chapter-marker. This also fixes a long-standing bug in `--contact-sheet`/`--debug` (since 0.9.0), which stretched every step by ~65–100 ms and drifted the cues with it. Two limits: a step with no hold to absorb its capture (a long action under almost no narration, or `settleMs: 0`) is still lengthened, and the render now warns by name; and a capture briefly stalls the compositor, so an animating page may repeat a frame — the length is unchanged, but the output is not bit-identical.
 
-  New exports: `exportStills`, `stillsEntries`, `stillsDir`, and the types `StillsConfig`, `StillEntry`, `StillIndexEntry`, `StillsResult`, `StillsIndexMeta`, `ExportStillsInput`. New optional fields: `RenderOptions.stills`, `ForgeConfig.stills`, and `RenderResult.stills` (the export's outcome — paths written, plus `missing`/`kept`/`pruned` counts).
+  Stills are rewritten on every export even when the screen didn't change, so a docs repo that commits them will see a diff per re-render.
 
-- **`runRecordPhase` now clears `workDir/steps/` at the start of a pass.** A recording pass owns its frames, so leftovers from an earlier run can't be mistaken for current ones by the contact sheet or the stills export. Relevant only if you call `runRecordPhase` directly and accumulated per-step screenshots across passes; the work dir is otherwise internal and is deleted on success anyway.
+  New exports: `exportStills`, `stillsEntries`, `stillsDir`, and the types `StillsConfig`, `StillEntry`, `StillIndexEntry`, `StillsResult`, `StillsIndexMeta`, `ExportStillsInput`. New optional fields: `Step.alt`, `Step.still`, `RenderOptions.stills`, `ForgeConfig.stills`, and `RenderResult.stills` (paths written, plus `missing`/`kept`/`pruned` counts).
+
+- **`runRecordPhase` now clears `workDir/steps/` at the start of a pass.** A recording pass owns its frames, so leftovers from an earlier run can't be mistaken for current ones by the contact sheet or the stills export. Relevant only if you call `runRecordPhase` directly; the work dir is otherwise internal and is deleted on success anyway.
 
 ## 0.13.0 — parallel batch rendering
 

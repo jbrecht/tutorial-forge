@@ -51,6 +51,7 @@ program
   .option('--contact-sheet', 'emit a per-step contact sheet PNG next to the video (authoring verification)')
   .option('--stills', 'export per-step PNGs + a captioned index next to the video (documentation screenshots)')
   .option('--stills-steps <steps>', 'stills subset: step ids and/or "from-id..to-id" ranges, comma-separated (implies --stills)')
+  .option('--stills-capture <when>', "which frame each still shows: 'before' (default) or 'after'")
   .option('--no-chapters', 'skip chapter markers (MP4 chapter track + .chapters.vtt/.txt sidecars)')
   .option('--no-cards', 'skip intro/recap cards (from each tutorial objectives/summary)')
   .option('--debug', 'keep work dir with Playwright trace, console log, per-step screenshots')

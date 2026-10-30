@@ -7,6 +7,9 @@ import { logger } from './util/logger.js';
  * ids). `__objectives__` is newline-separated (one objective per line);
  * `__summary__` is a single string. See {@link localizeTutorial}.
  */
+/** Suffix marking a step's still-caption translation: `"open-modal.alt": "…"`. */
+export const ALT_SUFFIX = '.alt';
+
 export const OBJECTIVES_KEY = '__objectives__';
 export const SUMMARY_KEY = '__summary__';
 
@@ -35,7 +38,12 @@ export function localizeTutorial<S = unknown>(tutorial: Tutorial<S>, lang: strin
 
   const knownIds = new Set(tutorial.steps.map((s, i) => stepId(s, i)));
   const reserved = new Set([OBJECTIVES_KEY, SUMMARY_KEY]);
-  const unknown = Object.keys(table).filter((k) => !knownIds.has(k) && !reserved.has(k));
+  // "<step-id>.alt" translates a step's still caption (#71 §4) — narration is
+  // spoken, alt is read, and a localized stills directory carrying English
+  // captions would quietly break the "stays in sync with the script" promise.
+  const unknown = Object.keys(table).filter(
+    (k) => !knownIds.has(k) && !reserved.has(k) && !(k.endsWith(ALT_SUFFIX) && knownIds.has(k.slice(0, -ALT_SUFFIX.length))),
+  );
   if (unknown.length) {
     logger.warn(
       `Tutorial "${tutorial.id}" [${lang}]: translation keys match no step: ${unknown.join(', ')}`,
@@ -46,11 +54,13 @@ export function localizeTutorial<S = unknown>(tutorial: Tutorial<S>, lang: strin
   const steps = tutorial.steps.map((step, i) => {
     const id = stepId(step, i);
     const translated = table[id];
+    const translatedAlt = table[`${id}${ALT_SUFFIX}`];
+    const withAlt = translatedAlt !== undefined ? { alt: translatedAlt } : {};
     if (translated === undefined) {
       if (step.narration.trim()) missing.push(id);
-      return step;
+      return { ...step, ...withAlt };
     }
-    return { ...step, narration: translated };
+    return { ...step, narration: translated, ...withAlt };
   });
   if (missing.length) {
     logger.warn(

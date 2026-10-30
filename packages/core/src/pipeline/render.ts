@@ -7,7 +7,15 @@ import { runTTSPhase, loadTTSResult, loadTTSResultIfPresent, silentTTSResult } f
 import { runRecordPhase, loadManifest } from './record.js';
 import { runPostPhase, type PostPhaseResult } from './post.js';
 import { renderContactSheet, contactSheetEntries, contactSheetPath } from './contact-sheet.js';
-import { exportStills, stillsEntries, stillsDir, validateStillsSelection, type StillsResult } from './stills.js';
+import {
+  exportStills,
+  stillsEntries,
+  stillsDir,
+  validateStillsSelection,
+  assertNoFilenameCollisions,
+  type StillsConfig,
+  type StillsResult,
+} from './stills.js';
 import { defaultCacheDir } from '../tts/cache.js';
 import { ensureDir, removeDir } from '../util/fs.js';
 import { logger } from '../util/logger.js';
@@ -55,6 +63,11 @@ export async function render<S = unknown>(
   if (wantStills && stillsConfig.steps) {
     validateStillsSelection(tutorialStepIds, tutorial.id, stillsConfig.steps);
   }
+  // Two steps whose ids collapse to one filename are computable from the spec,
+  // so reject them here rather than after a full recording pass.
+  if (wantStills) {
+    assertNoFilenameCollisions(tutorialStepIds, tutorial.id);
+  }
   // Only the recording phases produce frames to publish. Say so up front
   // rather than letting the flag look like it worked.
   if (wantStills && phase !== 'all' && phase !== 'record') {
@@ -96,7 +109,8 @@ export async function render<S = unknown>(
             lang,
             recorder: options.recorder,
             debug: options.debug,
-            screenshots: wantContactSheet || wantStills || options.debug,
+            screenshots: wantContactSheet || options.debug,
+            stills: wantStills ? { capture: stillsConfig.capture ?? 'before' } : undefined,
           })
         : await loadManifest(workDir);
 
@@ -114,13 +128,13 @@ export async function render<S = unknown>(
     // `--phase record` framing check can produce the image set on its own.
     let stills: StillsResult | null = null;
     if (wantStills && (phase === 'all' || phase === 'record')) {
-      stills = await exportDocumentationStills({
-        entries: stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds),
+      stills = await exportDocumentationStills(() => ({
+        entries: stillsEntries(manifest, workDir, stillsConfig.steps, tutorialStepIds, stillsConfig),
         outDir: stillsDir(output),
         meta: { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
         config: stillsConfig,
         tutorialStepIds,
-      });
+      }));
       if (stills?.dir) {
         const extra = [
           stills.kept ? `${stills.kept} kept` : '',
@@ -216,9 +230,13 @@ async function emitFailureContactSheet(
  * successful recording its MP4 — this is a documentation side-artifact, and
  * `runPostPhase` has not run yet at the call site. Warns and returns null.
  */
-async function exportDocumentationStills(input: Parameters<typeof exportStills>[0]): Promise<StillsResult | null> {
+async function exportDocumentationStills(
+  // A thunk, so building the entries (which can throw on a filename collision)
+  // is inside the guard too — the MP4 must survive any stills failure.
+  build: () => Parameters<typeof exportStills>[0],
+): Promise<StillsResult | null> {
   try {
-    return await exportStills(input);
+    return await exportStills(build());
   } catch (err) {
     logger.warn(
       `stills: export failed, continuing with the render — ${err instanceof Error ? err.message : err}`,
@@ -235,14 +253,14 @@ async function emitPartialStills(
   tutorialStepIds: string[],
   lang: string | undefined,
   viewport: { width: number; height: number },
-  config: { steps?: string; markdown?: boolean },
+  config: StillsConfig,
 ): Promise<void> {
   try {
     const manifest = await loadManifest(workDir); // completed steps only
     const result = await exportStills({
       // Selection and numbering resolve against the full tutorial, so a
       // selection naming a step that never ran still exports the ones that did.
-      entries: stillsEntries(manifest, workDir, config.steps, tutorialStepIds),
+      entries: stillsEntries(manifest, workDir, config.steps, tutorialStepIds, config),
       outDir: stillsDir(output),
       meta: { tutorialId: tutorial.id, title: tutorial.title, lang, viewport },
       config,

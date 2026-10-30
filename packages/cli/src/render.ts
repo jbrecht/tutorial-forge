@@ -32,6 +32,8 @@ export interface RenderCmdOptions {
   stills?: boolean;
   /** Stills subset ("step-id", "a..b", or a comma-separated mix). Implies --stills. */
   stillsSteps?: string;
+  /** Which frame each still shows: 'before' | 'after'. Implies --stills. */
+  stillsCapture?: string;
   /** Chapter markers. Commander sets this false only when --no-chapters is passed (else true). */
   chapters?: boolean;
   /** Intro/recap cards. Commander sets this false only when --no-cards is passed (else true). */
@@ -53,12 +55,23 @@ function resolveGifOption(
  * implies --stills). Mirrors resolveGifOption.
  */
 export function resolveStillsOption(
-  opts: Pick<RenderCmdOptions, 'stills' | 'stillsSteps'>,
+  opts: Pick<RenderCmdOptions, 'stills' | 'stillsSteps' | 'stillsCapture'>,
   configStills: ForgeConfig['stills'],
 ): ForgeConfig['stills'] {
-  if (!opts.stills && !opts.stillsSteps) return configStills;
+  const anyFlag = opts.stills || opts.stillsSteps || opts.stillsCapture;
+  if (!anyFlag) return configStills;
   const base = typeof configStills === 'object' ? configStills : {};
-  return opts.stillsSteps ? { ...base, steps: opts.stillsSteps } : { ...base };
+  const merged = { ...base };
+  if (opts.stillsSteps) merged.steps = opts.stillsSteps;
+  if (opts.stillsCapture) merged.capture = resolveStillsCapture(opts.stillsCapture);
+  return merged;
+}
+
+function resolveStillsCapture(value: string): 'before' | 'after' {
+  if (value !== 'before' && value !== 'after') {
+    throw new Error(`Invalid --stills-capture "${value}" (expected before | after)`);
+  }
+  return value;
 }
 
 function resolveRecorder(value: string | undefined): 'video' | 'screencast' | undefined {

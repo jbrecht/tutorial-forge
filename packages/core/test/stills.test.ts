@@ -1,25 +1,26 @@
 import { mkdtemp, mkdir, writeFile, readFile, readdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { deflateSync } from 'node:zlib';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   exportStills,
   pngSize,
-  selectStillSteps,
   selectStillStepIds,
-  validateStillsSelection,
+  selectStillSteps,
   stillFileName,
   stillsDir,
   stillsEntries,
   stillsIndexJson,
   stillsIndexMarkdown,
+  validateStillsSelection,
   type StillsIndexMeta,
 } from '../src/pipeline/stills.js';
-import type { TimingManifest } from '../src/types.js';
+import type { ManifestStep, TimingManifest } from '../src/types.js';
 
-const step = (id: string, narration = `Do ${id}.`) => ({
+const step = (id: string, over: Partial<ManifestStep> = {}): ManifestStep => ({
   id,
-  narration,
+  narration: `Do ${id}.`,
   audioFile: null,
   audioDurationMs: 0,
   startMs: 0,
@@ -27,13 +28,14 @@ const step = (id: string, narration = `Do ${id}.`) => ({
   actionEndMs: 0,
   endMs: 0,
   callouts: [],
+  ...over,
 });
 
-const manifest = (ids: string[]): TimingManifest => ({
+const manifest = (ids: Array<string | ManifestStep>): TimingManifest => ({
   tutorialId: 'run-an-event',
   fps: 25,
   recordingStartEpochMs: 0,
-  steps: ids.map((id) => step(id)),
+  steps: ids.map((s) => (typeof s === 'string' ? step(s) : s)),
   totalDurationMs: 0,
 });
 
@@ -43,27 +45,78 @@ const meta: StillsIndexMeta = {
   viewport: { width: 1920, height: 1080 },
 };
 
+/** A real, decodable PNG of a solid colour — enough for pngSize and pixel comparison. */
+function pngOf(width: number, height: number, rgb: [number, number, number]): Buffer {
+  const stride = width * 3;
+  const raw = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * (stride + 1)] = 0; // filter: none
+    for (let x = 0; x < width; x++) {
+      const o = y * (stride + 1) + 1 + x * 3;
+      raw[o] = rgb[0];
+      raw[o + 1] = rgb[1];
+      raw[o + 2] = rgb[2];
+    }
+  }
+  const chunk = (type: string, body: Buffer): Buffer => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(body.length);
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), body]);
+    const crc = Buffer.alloc(4); // CRC unchecked by our decoder
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** Build a work dir whose steps/ holds the given frames. `@before` suffix = pre-action. */
+async function fixture(frames: string[], colour: [number, number, number] = [10, 20, 30]) {
+  const root = await mkdtemp(join(tmpdir(), 'forge-stills-'));
+  const workDir = join(root, 'work');
+  await mkdir(join(workDir, 'steps'), { recursive: true });
+  for (const f of frames) await writeFile(join(workDir, 'steps', `${f}.png`), pngOf(8, 4, colour));
+  return { root, workDir, outDir: join(root, 'out-stills') };
+}
+
 describe('stillsDir', () => {
   it('sits next to the video, named after it', () => {
     expect(stillsDir('/out/run-an-event.mp4')).toBe('/out/run-an-event-stills');
   });
-});
 
-describe('stillFileName', () => {
-  it('zero-pads to at least two digits', () => {
-    expect(stillFileName(3, 'set-status', 9)).toBe('03-set-status.png');
-  });
-
-  it('widens padding for tutorials with 100+ steps', () => {
-    expect(stillFileName(7, 'open', 120)).toBe('007-open.png');
-  });
-
-  it('pads from the tutorial total, not the selection, so names are stable across subsets', () => {
-    expect(stillFileName(12, 'open', 12)).toBe('12-open.png');
+  it('gives a localized render its own directory', () => {
+    expect(stillsDir('/out/run-an-event.es.mp4')).toBe('/out/run-an-event.es-stills');
   });
 });
 
-describe('selectStillSteps', () => {
+describe('stillFileName (#71 §6)', () => {
+  it('names a still for its step id, so a docs link survives inserting a step', () => {
+    // No position prefix: inserting a step earlier must not rename this file.
+    expect(stillFileName('set-status')).toBe('set-status.png');
+  });
+
+  it('collapses characters that would break a filename or markdown link', () => {
+    expect(stillFileName('save draft')).toBe('save-draft.png');
+    expect(stillFileName('pick (type)?')).toBe('pick-type.png');
+    expect(stillFileName('../escaped')).toBe('escaped.png');
+    expect(stillFileName('a/b')).toBe('a-b.png');
+    expect(stillFileName('..')).toBe('step.png');
+  });
+
+  it('leaves slug-shaped ids alone', () => {
+    expect(stillFileName('step_01.v2')).toBe('step_01.v2.png');
+  });
+});
+
+describe('selection parsing', () => {
   const m = manifest(['open', 'filter', 'set-status', 'save']);
 
   it('selects every step when no expression is given', () => {
@@ -71,484 +124,356 @@ describe('selectStillSteps', () => {
     expect(selectStillSteps(m, '  ')).toEqual([0, 1, 2, 3]);
   });
 
-  it('selects a single id', () => {
+  it('selects ids and ranges, collapsing duplicates into tutorial order', () => {
     expect(selectStillSteps(m, 'set-status')).toEqual([2]);
-  });
-
-  it('expands a range', () => {
     expect(selectStillSteps(m, 'filter..save')).toEqual([1, 2, 3]);
-  });
-
-  it('merges a comma-separated mix in tutorial order, collapsing duplicates', () => {
     expect(selectStillSteps(m, 'save, open..filter, open')).toEqual([0, 1, 3]);
   });
 
-  it('throws on an unknown step id', () => {
+  it('throws on an unknown id, a backwards range, or a selection matching nothing', () => {
     expect(() => selectStillSteps(m, 'nope')).toThrow(/No step "nope"/);
+    expect(() => selectStillSteps(m, 'save..open')).toThrow(/runs backwards/);
+    for (const bad of [',', ' , ', ',,']) {
+      expect(() => selectStillSteps(m, bad)).toThrow(/selected no steps/);
+    }
   });
 
-  it('throws on a backwards range', () => {
-    expect(() => selectStillSteps(m, 'save..open')).toThrow(/runs backwards/);
+  it('pre-flights a selection against the spec, before recording', () => {
+    const ids = ['open', 'save'];
+    expect(() => validateStillsSelection(ids, 't', 'save')).not.toThrow();
+    expect(() => validateStillsSelection(ids, 't', 'open..nope')).toThrow(/No step "nope"/);
+    expect(() => validateStillsSelection(ids, 't', undefined)).not.toThrow();
+    expect(selectStillStepIds(ids, 't', 'open,')).toEqual([0]);
   });
 });
 
-describe('stillsEntries', () => {
-  it('points at record per-step screenshots and keeps tutorial-order indices', () => {
-    const entries = stillsEntries(manifest(['open', 'filter', 'save']), '/work', 'filter..save');
-    expect(entries).toEqual([
-      {
-        index: 2,
-        id: 'filter',
-        narration: 'Do filter.',
-        source: join('/work', 'steps', 'filter.png'),
-        file: '02-filter.png',
-        recorded: true,
-      },
-      {
-        index: 3,
-        id: 'save',
-        narration: 'Do save.',
-        source: join('/work', 'steps', 'save.png'),
-        file: '03-save.png',
-        recorded: true,
-      },
+describe('stillsEntries — frame selection (#71 §1)', () => {
+  it('publishes the pre-action frame by default', () => {
+    const [e] = stillsEntries(manifest(['save']), '/work');
+    // The point of §1: a "click Save" caption must not sit over the screen
+    // Save led to, so the default source is the pre-action capture.
+    expect(e!.source).toBe(join('/work', 'steps', 'save@before.png'));
+    expect(e!.file).toBe('save.png');
+  });
+
+  it('publishes the settled frame when asked', () => {
+    const [e] = stillsEntries(manifest(['save']), '/work', undefined, undefined, { capture: 'after' });
+    expect(e!.source).toBe(join('/work', 'steps', 'save.png'));
+    expect(e!.file).toBe('save.png');
+  });
+
+  it('lets a step override the render default — the result-is-the-point case', () => {
+    const entries = stillsEntries(
+      manifest([step('click-save'), step('list-updates', { still: 'after' })]),
+      '/work',
+      undefined,
+      undefined,
+      { capture: 'before' },
+    );
+    expect(entries.map((e) => [e.id, e.source.endsWith('@before.png')])).toEqual([
+      ['click-save', true],
+      ['list-updates', false],
     ]);
   });
+
+  it('exports exactly one still per step', () => {
+    expect(stillsEntries(manifest(['a', 'b', 'c']), '/w')).toHaveLength(3);
+  });
 });
 
-describe('stillsIndexJson', () => {
-  const entries = stillsEntries(manifest(['open', 'save']), '/work');
+describe('stillsEntries — captions (#71 §4)', () => {
+  it('uses narration as the caption by default', () => {
+    expect(stillsEntries(manifest(['save']), '/w')[0]!.narration).toBe('Do save.');
+  });
 
-  it('carries step id, file, and narration for each still', () => {
+  it('prefers an explicit alt over narration, since narration is spoken not shown', () => {
+    const m = manifest([step('continue', { narration: 'Click Continue to go on.', alt: 'The interests form.' })]);
+    expect(stillsEntries(m, '/w')[0]!.narration).toBe('The interests form.');
+  });
+
+  it('honours an empty alt as a deliberate blank', () => {
+    const m = manifest([step('decorative', { alt: '' })]);
+    expect(stillsEntries(m, '/w')[0]!.narration).toBe('');
+  });
+});
+
+describe('stillsEntries — numbering and partial manifests', () => {
+  const tutorialIds = ['open', 'filter', 'save'];
+
+  it('keeps tutorial-order indices for the steps that recorded', () => {
+    const entries = stillsEntries(manifest(['open', 'filter']), '/work', undefined, tutorialIds);
+    expect(entries.map((e) => [e.index, e.id, e.recorded])).toEqual([
+      [1, 'open', true],
+      [2, 'filter', true],
+      [3, 'save', false],
+    ]);
+  });
+
+  it('does not abandon the export when a selection names a step that never ran', () => {
+    const entries = stillsEntries(manifest(['open']), '/work', 'open..save', tutorialIds);
+    expect(entries.map((e) => e.id)).toEqual(['open', 'filter', 'save']);
+  });
+
+  it('throws only for ids absent from the whole tutorial', () => {
+    expect(() => stillsEntries(manifest(['open']), '/w', 'save', tutorialIds)).not.toThrow();
+    expect(() => stillsEntries(manifest(['open']), '/w', 'typo', tutorialIds)).toThrow(/No step "typo"/);
+  });
+
+  it('rejects two steps that would collide on one filename', () => {
+    expect(() => stillsEntries(manifest(['save draft', 'save-draft']), '/w')).toThrow(
+      /Steps "save draft" and "save-draft" .* both produce the still "save-draft.png"/s,
+    );
+  });
+});
+
+describe('index documents', () => {
+  it('carries id, file and caption for each still', () => {
+    const entries = stillsEntries(manifest(['open', 'save']), '/work');
     const parsed = JSON.parse(stillsIndexJson(entries, meta));
     expect(parsed.tutorialId).toBe('run-an-event');
-    expect(parsed.title).toBe('Run an event');
-    expect(parsed.viewport).toEqual({ width: 1920, height: 1080 });
     expect(parsed.stills).toEqual([
-      { index: 1, id: 'open', file: '01-open.png', narration: 'Do open.' },
-      { index: 2, id: 'save', file: '02-save.png', narration: 'Do save.' },
+      { index: 1, id: 'open', file: 'open.png', narration: 'Do open.' },
+      { index: 2, id: 'save', file: 'save.png', narration: 'Do save.' },
     ]);
   });
 
-  it('is deterministic, so a docs repo only diffs on real changes', () => {
+  it('is deterministic and timestamp-free', () => {
+    const entries = stillsEntries(manifest(['open']), '/w');
     expect(stillsIndexJson(entries, meta)).toBe(stillsIndexJson(entries, meta));
+    expect(JSON.parse(stillsIndexJson(entries, meta))).not.toHaveProperty('generatedAt');
   });
 
-  it('omits lang when the render was not localized', () => {
+  it('omits lang unless the render was localized', () => {
+    const entries = stillsEntries(manifest(['open']), '/w');
     expect(JSON.parse(stillsIndexJson(entries, meta))).not.toHaveProperty('lang');
     expect(JSON.parse(stillsIndexJson(entries, { ...meta, lang: 'es' })).lang).toBe('es');
   });
-});
 
-describe('stillsIndexMarkdown', () => {
-  it('emits a captioned image per step, referenced by basename', () => {
-    const md = stillsIndexMarkdown(stillsEntries(manifest(['open']), '/work'), meta);
-    expect(md).toContain('# Run an event — screenshots');
-    expect(md).toContain('## 1. open');
-    expect(md).toContain('![Do open.](01-open.png)');
+  it('heads each markdown section with the caption, not the raw step id (#71 §4)', () => {
+    const m = manifest([step('city-bio', { narration: 'Tell people where you live. It shows on your profile.' })]);
+    const md = stillsIndexMarkdown(stillsEntries(m, '/w'), meta);
+    expect(md).toContain('## 1. Tell people where you live');
+    expect(md).not.toContain('## 1. city-bio');
   });
 
-  it('uses the step id as alt text when narration is empty', () => {
-    const m = manifest(['silent-beat']);
-    m.steps[0]!.narration = '   ';
-    const md = stillsIndexMarkdown(stillsEntries(m, '/work'), meta);
-    expect(md).toContain('![silent-beat](01-silent-beat.png)');
+  it('falls back to the step id when there is no caption', () => {
+    const md = stillsIndexMarkdown(stillsEntries(manifest([step('silent', { narration: '  ' })]), '/w'), meta);
+    expect(md).toContain('## 1. silent');
+    expect(md).toContain('![silent](silent.png)');
   });
 
-  it('flattens and escapes narration that would break the alt text', () => {
-    const m = manifest(['pick']);
-    m.steps[0]!.narration = 'Choose [Save]\nthen wait';
-    const md = stillsIndexMarkdown(stillsEntries(m, '/work'), meta);
-    expect(md).toContain('![Choose \\[Save\\] then wait](01-pick.png)');
+  it('emits a paste-ready captioned image, escaping and encoding safely', () => {
+    const m = manifest([step('pick', { narration: 'Choose [Save]\nthen wait' })]);
+    const md = stillsIndexMarkdown(stillsEntries(m, '/w'), meta);
+    expect(md).toContain('![Choose \\[Save\\] then wait](pick.png)');
   });
 });
 
 describe('exportStills', () => {
-  async function fixture(ids: string[], present: string[]) {
-    const root = await mkdtemp(join(tmpdir(), 'forge-stills-'));
-    const workDir = join(root, 'work');
-    await mkdir(join(workDir, 'steps'), { recursive: true });
-    for (const id of present) await writeFile(join(workDir, 'steps', `${id}.png`), `png:${id}`);
-    return { root, workDir, manifest: manifest(ids), outDir: join(root, 'out-stills') };
-  }
-
-  it('copies the selected frames and writes both indexes', async () => {
-    const f = await fixture(['open', 'save'], ['open', 'save']);
-    const result = await exportStills({ entries: stillsEntries(f.manifest, f.workDir), outDir: f.outDir, meta });
+  it('copies the pre-action frames and writes both indexes', async () => {
+    const f = await fixture(['open@before', 'save@before']);
+    const result = await exportStills({
+      entries: stillsEntries(manifest(['open', 'save']), f.workDir),
+      outDir: f.outDir,
+      meta,
+    });
 
     expect(result.dir).toBe(f.outDir);
     expect(result.missing).toEqual([]);
-    expect((await readdir(f.outDir)).sort()).toEqual([
-      '01-open.png',
-      '02-save.png',
-      'index.json',
-      'index.md',
-    ]);
-    expect(await readFile(join(f.outDir, '01-open.png'), 'utf8')).toBe('png:open');
-    expect(result.files).toEqual([join(f.outDir, '01-open.png'), join(f.outDir, '02-save.png')]);
+    expect((await readdir(f.outDir)).sort()).toEqual(['index.json', 'index.md', 'open.png', 'save.png']);
   });
 
-  it('skips the markdown index when disabled', async () => {
-    const f = await fixture(['open'], ['open']);
-    const result = await exportStills({ entries: stillsEntries(f.manifest, f.workDir), outDir: f.outDir, meta, config: { markdown: false } });
-    expect(result.indexMarkdownPath).toBeNull();
-    expect(await readdir(f.outDir)).not.toContain('index.md');
-  });
-
-  it('exports the frames that exist and reports the rest — a failed render still yields stills', async () => {
-    const f = await fixture(['open', 'filter', 'save'], ['open', 'filter']);
-    const result = await exportStills({ entries: stillsEntries(f.manifest, f.workDir), outDir: f.outDir, meta });
-
-    expect(result.files).toHaveLength(2);
-    expect(result.missing).toEqual(['save']);
-    // The index describes only what was written, so no broken image links.
-    expect(JSON.parse(await readFile(join(f.outDir, 'index.json'), 'utf8')).stills).toHaveLength(2);
-  });
-
-  it('writes nothing when no frames exist at all', async () => {
-    const f = await fixture(['open'], []);
-    const result = await exportStills({ entries: stillsEntries(f.manifest, f.workDir), outDir: f.outDir, meta });
-    expect(result).toEqual({
-      dir: null,
-      files: [],
-      indexJsonPath: null,
-      indexMarkdownPath: null,
-      missing: ['open'],
-      kept: 0,
-      pruned: 0,
+  it('reports a step whose frame is missing instead of failing', async () => {
+    const f = await fixture(['open@before']);
+    const result = await exportStills({
+      entries: stillsEntries(manifest(['open', 'save']), f.workDir),
+      outDir: f.outDir,
+      meta,
     });
+    expect(result.files).toHaveLength(1);
+    expect(result.missing).toEqual(['save']);
+    expect(JSON.parse(await readFile(join(f.outDir, 'index.json'), 'utf8')).stills).toHaveLength(1);
+  });
+
+  it('writes nothing — and destroys nothing — when this pass recorded no frames', async () => {
+    const f = await fixture([]);
+    const result = await exportStills({
+      entries: stillsEntries(manifest(['open']), f.workDir),
+      outDir: f.outDir,
+      meta,
+    });
+    expect(result).toMatchObject({ dir: null, files: [], missing: ['open'], kept: 0, pruned: 0 });
     await expect(readdir(f.outDir)).rejects.toThrow();
   });
 
-  it('honours a step selection', async () => {
-    const f = await fixture(['open', 'filter', 'save'], ['open', 'filter', 'save']);
-    const result = await exportStills({ entries: stillsEntries(f.manifest, f.workDir, 'save'), outDir: f.outDir, meta });
-    expect(await readdir(f.outDir)).toContain('03-save.png');
-    expect(result.files).toHaveLength(1);
-  });
-});
-
-/** Minimal 1x1-ish PNG header: signature + IHDR with the given dimensions. */
-function pngBytes(width: number, height: number): Buffer {
-  const buf = Buffer.alloc(24);
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
-  buf.write('IHDR', 12, 'ascii');
-  buf.writeUInt32BE(width, 16);
-  buf.writeUInt32BE(height, 20);
-  return buf;
-}
-
-describe('pngSize', () => {
-  it('reads dimensions out of the IHDR chunk', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-png-'));
-    const file = join(dir, 'a.png');
-    await writeFile(file, pngBytes(3840, 2160));
-    expect(await pngSize(file)).toEqual({ width: 3840, height: 2160 });
-  });
-
-  it('returns undefined for a missing file or a non-PNG', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-png-'));
-    const notPng = join(dir, 'b.png');
-    await writeFile(notPng, 'this is not a png at all!!');
-    expect(await pngSize(join(dir, 'nope.png'))).toBeUndefined();
-    expect(await pngSize(notPng)).toBeUndefined();
-  });
-});
-
-describe('stills index pixelSize (#71)', () => {
-  it('stamps the real exported dimensions, which differ from the CSS viewport on retina', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'forge-stills-dsf-'));
-    const workDir = join(root, 'work');
-    await mkdir(join(workDir, 'steps'), { recursive: true });
-    await writeFile(join(workDir, 'steps', 'open.png'), pngBytes(3840, 2160));
-
-    const outDir = join(root, 'out-stills');
-    await exportStills({ entries: stillsEntries(manifest(['open']), workDir), outDir: outDir, meta });
-
-    const index = JSON.parse(await readFile(join(outDir, 'index.json'), 'utf8'));
-    expect(index.viewport).toEqual({ width: 1920, height: 1080 });
-    expect(index.pixelSize).toEqual({ width: 3840, height: 2160 });
-  });
-
-  it('omits pixelSize when the frame is unreadable rather than guessing', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'forge-stills-nodsf-'));
-    const workDir = join(root, 'work');
-    await mkdir(join(workDir, 'steps'), { recursive: true });
-    await writeFile(join(workDir, 'steps', 'open.png'), 'not really a png');
-
-    const outDir = join(root, 'out-stills');
-    await exportStills({ entries: stillsEntries(manifest(['open']), workDir), outDir: outDir, meta });
-
-    const index = JSON.parse(await readFile(join(outDir, 'index.json'), 'utf8'));
-    expect(index).not.toHaveProperty('pixelSize');
-  });
-});
-
-describe('selectStillStepIds / validateStillsSelection (#71)', () => {
-  const ids = ['open', 'filter', 'save'];
-
-  it('resolves against plain ids, with no manifest needed', () => {
-    expect(selectStillStepIds(ids, 't', 'filter..save')).toEqual([1, 2]);
-    expect(selectStillStepIds(ids, 't')).toEqual([0, 1, 2]);
-  });
-
-  it('names the tutorial and its steps when an id is unknown', () => {
-    expect(() => selectStillStepIds(ids, 'run-an-event', 'typo')).toThrow(
-      /No step "typo" in tutorial "run-an-event" \(steps: open, filter, save\)/,
-    );
-  });
-
-  it('pre-flights a selection so a typo fails before recording', () => {
-    expect(() => validateStillsSelection(ids, 't', 'save')).not.toThrow();
-    expect(() => validateStillsSelection(ids, 't', 'open..nope')).toThrow(/No step "nope"/);
-    expect(() => validateStillsSelection(ids, 't', 'save..open')).toThrow(/runs backwards/);
-  });
-
-  it('accepts an absent selection (the export-everything default)', () => {
-    expect(() => validateStillsSelection(ids, 't', undefined)).not.toThrow();
-  });
-});
-
-describe('stillsEntries against a partial manifest (#71)', () => {
-  // A failed render's manifest holds only the completed steps. Selection and
-  // numbering must still come from the tutorial spec.
-  const tutorialIds = ['open', 'filter', 'save'];
-  const partial = manifest(['open', 'filter']); // 'save' never ran
-
-  it('keeps tutorial-order numbering for the steps that did record', () => {
-    const entries = stillsEntries(partial, '/work', undefined, tutorialIds);
-    expect(entries.map((e) => e.file)).toEqual(['01-open.png', '02-filter.png', '03-save.png']);
-  });
-
-  it('does not abandon the export when the selection names a step that never ran', () => {
-    const entries = stillsEntries(partial, '/work', 'open..save', tutorialIds);
-    expect(entries.map((e) => e.id)).toEqual(['open', 'filter', 'save']);
-    // 'save' has no narration to borrow, and its frame is absent, so the
-    // export drops it into `missing` rather than into the index.
-    expect(entries.find((e) => e.id === 'save')!.narration).toBe('');
-  });
-
-  it('throws only for ids absent from the whole tutorial, not merely unrecorded', () => {
-    expect(() => stillsEntries(partial, '/work', 'save', tutorialIds)).not.toThrow();
-    expect(() => stillsEntries(partial, '/work', 'typo', tutorialIds)).toThrow(/No step "typo"/);
-  });
-
-  it('pads from the tutorial total so a failure cannot renumber survivors', () => {
-    const big = Array.from({ length: 120 }, (_, i) => `s${i + 1}`);
-    const failedEarly = manifest(['s1', 's2', 's3']);
-    const entries = stillsEntries(failedEarly, '/work', undefined, big);
-    expect(entries[0]!.file).toBe('001-s1.png');
-  });
-});
-
-async function exportFixture(tutorialIds: string[], recordedIds: string[] = tutorialIds) {
-  const root = await mkdtemp(join(tmpdir(), 'forge-stills-rx-'));
-  const workDir = join(root, 'work');
-  await mkdir(join(workDir, 'steps'), { recursive: true });
-  for (const id of recordedIds) await writeFile(join(workDir, 'steps', `${id}.png`), `png:${id}`);
-  return {
-    root,
-    workDir,
-    outDir: join(root, 'out-stills'),
-    run: (steps?: string, ids: string[] = tutorialIds, markdown = true) =>
-      exportStills({
-        entries: stillsEntries(manifest(recordedIds), workDir, steps, ids),
-        outDir: join(root, 'out-stills'),
-        meta,
-        config: { markdown },
-        tutorialStepIds: ids,
-      }),
-  };
-}
-
-describe('exportStills re-export reconciliation (#71)', () => {
-  it("never deletes an author's own files, whatever they are named", async () => {
-    const f = await exportFixture(['open']);
-    await f.run(); // establishes an index.json
-    // The likely author moves: annotate a still, drop in a dated asset.
-    await writeFile(join(f.outDir, '01-open-annotated.png'), 'AUTHOR WORK');
-    await writeFile(join(f.outDir, '2024-release.png'), 'AUTHOR WORK');
-    await writeFile(join(f.outDir, 'notes.md'), 'mine');
-
-    const result = await f.run();
-
-    expect(result.pruned).toBe(0);
-    for (const name of ['01-open-annotated.png', '2024-release.png', 'notes.md']) {
-      expect(await readFile(join(f.outDir, name), 'utf8')).toMatch(/AUTHOR WORK|mine/);
-    }
-  });
-
-  it('removes an orphan whose step left the tutorial', async () => {
-    const f = await exportFixture(['open', 'filter']);
-    await f.run();
-    expect((await readdir(f.outDir)).sort()).toContain('02-filter.png');
-
-    // 'filter' is gone from the tutorial; re-export the same directory with
-    // only 'open', so the previous index is there to reconcile against.
-    const result = await exportStills({
-      entries: stillsEntries(manifest(['open']), f.workDir, undefined, ['open']),
-      outDir: f.outDir,
-      meta,
-      tutorialStepIds: ['open'],
-    });
-
-    expect(result.pruned).toBe(1);
-    expect(await readdir(f.outDir)).not.toContain('02-filter.png');
-  });
-
-  it('merges a subset re-export into the existing set instead of discarding it', async () => {
-    const f = await exportFixture(['open', 'filter', 'save']);
-    await f.run(); // full set
-
-    const result = await f.run('save'); // regenerate just one step
-
-    expect(result.files).toHaveLength(1);
-    expect(result.kept).toBe(2);
-    expect(result.pruned).toBe(0);
-    // All three survive...
-    expect((await readdir(f.outDir)).sort()).toEqual([
-      '01-open.png',
-      '02-filter.png',
-      '03-save.png',
-      'index.json',
-      'index.md',
-    ]);
-    // ...and the index still describes all three, in tutorial order.
-    const index = JSON.parse(await readFile(join(f.outDir, 'index.json'), 'utf8'));
-    expect(index.stills.map((e: { file: string }) => e.file)).toEqual([
-      '01-open.png',
-      '02-filter.png',
-      '03-save.png',
-    ]);
-  });
-
-  it('drops a carried-forward entry whose file an author deleted', async () => {
-    const f = await exportFixture(['open', 'save']);
-    await f.run();
-    await unlink(join(f.outDir, '01-open.png'));
-
-    const result = await f.run('save');
-
-    expect(result.kept).toBe(0);
-    const index = JSON.parse(await readFile(join(f.outDir, 'index.json'), 'utf8'));
-    expect(index.stills.map((e: { id: string }) => e.id)).toEqual(['save']);
-  });
-
-  it('removes a stale index.md when markdown is turned off', async () => {
-    const f = await exportFixture(['open']);
-    await f.run(undefined, ['open'], true);
-    expect(await readdir(f.outDir)).toContain('index.md');
-
-    const result = await f.run(undefined, ['open'], false);
-
-    expect(result.indexMarkdownPath).toBeNull();
-    expect(await readdir(f.outDir)).not.toContain('index.md');
-  });
-
-  it('leaves a previous export untouched when this pass recorded nothing', async () => {
-    const f = await exportFixture(['open']);
-    await f.run();
-    const before = (await readdir(f.outDir)).sort();
-
-    // A pass that recorded no steps at all (manifest empty).
-    const result = await exportStills({
-      entries: stillsEntries(manifest([]), f.workDir, undefined, ['open']),
-      outDir: f.outDir,
-      meta,
-      tutorialStepIds: ['open'],
-    });
-
-    expect(result.dir).toBeNull();
-    expect(result.missing).toEqual(['open']);
-    expect((await readdir(f.outDir)).sort()).toEqual(before);
-  });
-});
-
-describe('stale-frame protection (#71)', () => {
-  it('does not export a leftover frame for a step that did not record this pass', async () => {
-    // Work dirs are reused: run 1 wrote frames for all three steps, run 2
-    // failed at 'filter', so only 'open' is in the new manifest.
-    const f = await exportFixture(['open', 'filter', 'save']);
+  it('does not publish a leftover frame for a step that did not record this pass', async () => {
+    const f = await fixture(['open@before', 'filter@before', 'save@before']);
     const result = await exportStills({
       entries: stillsEntries(manifest(['open']), f.workDir, undefined, ['open', 'filter', 'save']),
       outDir: f.outDir,
       meta,
       tutorialStepIds: ['open', 'filter', 'save'],
     });
-
-    expect(result.files.map((p) => p.split('/').pop())).toEqual(['01-open.png']);
+    expect(result.files.map((p) => p.split('/').pop())).toEqual(['open.png']);
     expect(result.missing).toEqual(['filter', 'save']);
-    const index = JSON.parse(await readFile(join(f.outDir, 'index.json'), 'utf8'));
-    expect(index.stills).toHaveLength(1);
   });
 
-  it('marks manifest-backed steps as recorded and others not', async () => {
-    const entries = stillsEntries(manifest(['open']), '/w', undefined, ['open', 'save']);
-    expect(entries.map((e) => [e.id, e.recorded])).toEqual([
-      ['open', true],
-      ['save', false],
-    ]);
-  });
 });
 
-describe('filename and markdown safety (#71)', () => {
-  it('collapses characters that would break a filename or markdown link', () => {
-    expect(stillFileName(1, 'save draft', 8)).toBe('01-save-draft.png');
-    expect(stillFileName(1, 'pick (type)?', 8)).toBe('01-pick-type.png');
-    expect(stillFileName(1, 'a#b', 8)).toBe('01-a-b.png');
-  });
+describe('exportStills — re-export reconciliation', () => {
+  async function exported(tutorialIds: string[], frames = tutorialIds.map((id) => `${id}@before`)) {
+    const f = await fixture(frames);
+    const run = (steps?: string, ids: string[] = tutorialIds, markdown = true) =>
+      exportStills({
+        entries: stillsEntries(manifest(tutorialIds.filter((id) => frames.includes(`${id}@before`))), f.workDir, steps, ids),
+        outDir: f.outDir,
+        meta,
+        config: { markdown },
+        tutorialStepIds: ids,
+      });
+    return { ...f, run };
+  }
 
-  it('neutralises a path-traversal step id', () => {
-    expect(stillFileName(1, '../escaped', 8)).toBe('01-escaped.png');
-    expect(stillFileName(1, 'a/b', 8)).toBe('01-a-b.png');
-    expect(stillFileName(1, '..', 8)).toBe('01-step.png');
-  });
+  it("never deletes an author's own files, whatever they are named", async () => {
+    const f = await exported(['open']);
+    await f.run();
+    await writeFile(join(f.outDir, 'open-annotated.png'), 'AUTHOR WORK');
+    await writeFile(join(f.outDir, '2024-release.png'), 'AUTHOR WORK');
+    await writeFile(join(f.outDir, 'notes.md'), 'mine');
 
-  it('leaves slug-shaped ids alone', () => {
-    expect(stillFileName(3, 'set-status', 8)).toBe('03-set-status.png');
-    expect(stillFileName(3, 'step_01.v2', 8)).toBe('03-step_01.v2.png');
-  });
+    const result = await f.run();
 
-  it('emits a usable markdown link for an awkward id', () => {
-    const md = stillsIndexMarkdown(stillsEntries(manifest(['save draft']), '/w'), meta);
-    expect(md).toContain('![Do save draft.](01-save-draft.png)');
-    expect(md).not.toContain('(01-save draft.png)');
-  });
-});
-
-describe('degenerate selections (#71)', () => {
-  const ids = ['open', 'save'];
-
-  it('rejects a selection that resolves to no steps', () => {
-    for (const bad of [',', ' , ', ',,']) {
-      expect(() => selectStillStepIds(ids, 't', bad)).toThrow(/selected no steps/);
+    expect(result.pruned).toBe(0);
+    for (const name of ['open-annotated.png', '2024-release.png', 'notes.md']) {
+      expect(await readFile(join(f.outDir, name), 'utf8')).toMatch(/AUTHOR WORK|mine/);
     }
   });
 
-  it('still treats an absent selection as export-everything', () => {
-    expect(selectStillStepIds(ids, 't', undefined)).toEqual([0, 1]);
-    expect(selectStillStepIds(ids, 't', '  ')).toEqual([0, 1]);
+  it('removes an orphan whose step left the tutorial', async () => {
+    const f = await exported(['open', 'filter']);
+    await f.run();
+    expect(await readdir(f.outDir)).toContain('filter.png');
+
+    const result = await f.run(undefined, ['open']);
+
+    expect(result.pruned).toBe(1);
+    expect(await readdir(f.outDir)).not.toContain('filter.png');
   });
 
-  it('accepts a trailing comma', () => {
-    expect(selectStillStepIds(ids, 't', 'open,')).toEqual([0]);
+  it('merges a subset re-export instead of discarding the rest', async () => {
+    const f = await exported(['open', 'filter', 'save']);
+    await f.run();
+
+    const result = await f.run('save');
+
+    expect(result.files).toHaveLength(1);
+    expect(result.kept).toBe(2);
+    expect((await readdir(f.outDir)).sort()).toEqual([
+      'filter.png',
+      'index.json',
+      'index.md',
+      'open.png',
+      'save.png',
+    ]);
+    const index = JSON.parse(await readFile(join(f.outDir, 'index.json'), 'utf8'));
+    expect(index.stills.map((e: { id: string }) => e.id)).toEqual(['open', 'filter', 'save']);
+  });
+
+  it('removes a stale index.md when markdown is turned off', async () => {
+    const f = await exported(['open']);
+    await f.run();
+    const result = await f.run(undefined, ['open'], false);
+    expect(result.indexMarkdownPath).toBeNull();
+    expect(await readdir(f.outDir)).not.toContain('index.md');
+  });
+
+  it('drops a carried-forward entry whose file an author deleted', async () => {
+    const f = await exported(['open', 'save']);
+    await f.run();
+    await unlink(join(f.outDir, 'open.png'));
+    const result = await f.run('save');
+    expect(result.kept).toBe(0);
   });
 });
 
-describe('pngSize chunk validation (#71)', () => {
-  it('rejects a file whose first chunk is not IHDR', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-png-chunk-'));
-    const file = join(dir, 'odd.png');
-    const buf = pngBytes(100, 50);
-    buf.write('gAMA', 12, 'ascii'); // valid PNG signature, different first chunk
-    await writeFile(file, buf);
-    expect(await pngSize(file)).toBeUndefined();
+
+describe('pngSize', () => {
+  it('reads dimensions out of a real PNG', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-png-'));
+    const file = join(dir, 'a.png');
+    await writeFile(file, pngOf(64, 32, [1, 2, 3]));
+    expect(await pngSize(file)).toEqual({ width: 64, height: 32 });
   });
 
-  it('rejects a file truncated after the signature', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'forge-png-trunc-'));
-    const file = join(dir, 'short.png');
-    await writeFile(file, pngBytes(100, 50).subarray(0, 12));
-    expect(await pngSize(file)).toBeUndefined();
+  it('returns undefined for a missing file, a non-PNG, or a truncated one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forge-png-bad-'));
+    await writeFile(join(dir, 'b.png'), 'this is not a png at all!!');
+    await writeFile(join(dir, 'c.png'), pngOf(8, 8, [0, 0, 0]).subarray(0, 12));
+    expect(await pngSize(join(dir, 'nope.png'))).toBeUndefined();
+    expect(await pngSize(join(dir, 'b.png'))).toBeUndefined();
+    expect(await pngSize(join(dir, 'c.png'))).toBeUndefined();
+  });
+
+  it('stamps the real exported pixel size into the index', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'forge-dsf-'));
+    const workDir = join(root, 'work');
+    await mkdir(join(workDir, 'steps'), { recursive: true });
+    await writeFile(join(workDir, 'steps', 'open@before.png'), pngOf(3840, 4, [0, 0, 0]));
+    const outDir = join(root, 'out-stills');
+    await exportStills({ entries: stillsEntries(manifest(['open']), workDir), outDir, meta });
+    const index = JSON.parse(await readFile(join(outDir, 'index.json'), 'utf8'));
+    expect(index.viewport).toEqual({ width: 1920, height: 1080 });
+    expect(index.pixelSize).toEqual({ width: 3840, height: 4 });
   });
 });
+
+describe('regressions from the second review round (#71)', () => {
+  const mkIds = (ids: string[]) => ids;
+
+  it('rejects colliding filenames across the whole tutorial, not just the selection', () => {
+    // Previously a subset export dodged the check and two steps silently wrote
+    // onto one file with two captions in the index.
+    expect(() => stillsEntries(manifest(['a b', 'a-b']), '/w', 'a b')).toThrow(/both produce the still/);
+    expect(() => stillsEntries(manifest(['a b', 'a-b']), '/w', 'a-b')).toThrow(/both produce the still/);
+  });
+
+
+  it('validates the capture mode for programmatic callers who bypass zod', () => {
+    expect(() =>
+      stillsEntries(manifest(['open']), '/w', undefined, undefined, { capture: 'Before' as never }),
+    ).toThrow(/Invalid stills capture mode "Before" for step "open" \(expected before \| after\)/);
+    expect(() => stillsEntries(manifest([step('open', { still: 'both' as never })]), '/w')).toThrow(
+      /Invalid stills capture mode "both"/,
+    );
+  });
+
+
+  it('derives headings without splitting on abbreviations or cutting graphemes', () => {
+    const abbrev = manifest([step('a', { narration: 'Open the file, e.g. report.pdf. Then click Save.' })]);
+    expect(stillsIndexMarkdown(stillsEntries(abbrev, '/w'), meta)).toContain(
+      '## 1. Open the file, e.g. report.pdf',
+    );
+
+    const emoji = manifest([step('b', { narration: `Pick a plan ${'😀'.repeat(40)} and continue.` })]);
+    const md = stillsIndexMarkdown(stillsEntries(emoji, '/w'), meta);
+    const heading = md.split('\n').find((l) => l.startsWith('## '))!;
+    // No lone surrogate may reach the author's docs.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(heading)).toBe(false);
+
+    const cjk = manifest([step('c', { narration: 'イベントを作成します。次に保存します。' })]);
+    expect(stillsIndexMarkdown(stillsEntries(cjk, '/w'), meta)).toContain('## 1. イベントを作成します');
+  });
+
+  it('strips markdown-significant characters from headings', () => {
+    const m = manifest([step('d', { narration: 'Use the [Save] `button` # now. Then wait.' })]);
+    const heading = stillsIndexMarkdown(stillsEntries(m, '/w'), meta)
+      .split('\n')
+      .find((l) => l.startsWith('## '))!
+      .slice(3); // drop the "## " marker itself
+    expect(heading).not.toMatch(/[\[\]`#]/);
+  });
+
+
+});
+
+
