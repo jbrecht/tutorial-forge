@@ -98,7 +98,7 @@ pnpm install
 pnpm --filter tutorial-forge build
 cd packages/example-app
 pnpm exec playwright install chromium
-pnpm serve &          # demo app on :4173
+pnpm serve &          # demo app on :3700
 pnpm forge render     # → tutorials/dist/getting-started.mp4
 ```
 

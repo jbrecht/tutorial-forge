@@ -9,7 +9,7 @@ pnpm -r build          # tsc for core and cli
 pnpm -r typecheck
 pnpm -r test           # vitest units in packages/core/test and packages/cli/test (cache.test.ts needs ffmpeg)
 pnpm e2e               # the integration gate: boots the example app, renders real tutorials, asserts on the artifacts (2–3 min)
-cd packages/example-app && pnpm serve                       # the fixture app on http://localhost:4173
+cd packages/example-app && pnpm serve                       # the fixture app on http://localhost:3700
 cd packages/example-app && pnpm forge render --only getting-started --keep-work   # a real render; work dir in .forge/<id>/
 ```
 
