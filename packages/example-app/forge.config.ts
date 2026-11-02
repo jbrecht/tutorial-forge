@@ -1,6 +1,6 @@
 import { defineConfig, SilentProvider, ElevenLabs, OpenAITTS, type TTSProvider, type TutorialAdapter } from 'tutorial-forge';
 
-const baseURL = process.env.APP_URL ?? 'http://localhost:4173';
+const baseURL = process.env.APP_URL ?? 'http://localhost:3700';
 
 export const adapter: TutorialAdapter = {
   baseURL,

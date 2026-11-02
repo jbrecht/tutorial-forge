@@ -28,6 +28,6 @@ export function startServer(port = 0): Promise<{ port: number; close: () => Prom
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const port = parseInt(process.env.PORT ?? '4173', 10);
+  const port = parseInt(process.env.PORT ?? '3700', 10);
   startServer(port).then(({ port: p }) => console.log(`example app on http://localhost:${p}`));
 }
