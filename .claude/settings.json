@@ -22,7 +22,11 @@
       "Bash(pnpm serve *)",
       "Bash(pnpm pack *)",
       "Bash(pnpm ls *)",
-      "Bash(pnpm --filter *)",
+      "Bash(pnpm --filter tutorial-forge test*)",
+      "Bash(pnpm --filter tutorial-forge-cli test*)",
+      "Bash(pnpm --filter tutorial-forge-example-app e2e*)",
+      "Bash(pnpm --filter tutorial-forge-example-app exec playwright *)",
+      "Bash(pnpm --filter tutorial-forge --filter tutorial-forge-cli publish --dry-run --no-git-checks)",
       "Bash(npx tsx *)",
       "Bash(npx tutorial-forge *)",
       "Bash(node *)",
@@ -42,7 +46,14 @@
       "Bash(git push *)",
       "Bash(git tag *)",
       "Bash(git symbolic-ref *)",
-      "Bash(gh pr *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr checkout *)",
       "Bash(gh issue *)",
       "Bash(gh repo *)",
       "Bash(gh run *)",
@@ -53,5 +64,17 @@
       "Bash(brew info *)",
       "Bash(brew deps *)"
     ]
+  },
+  "enabledPlugins": {
+    "kit@jbrecht": true
+  },
+  "extraKnownMarketplaces": {
+    "jbrecht": {
+      "source": {
+        "source": "github",
+        "repo": "jbrecht/kit"
+      },
+      "autoUpdate": true
+    }
   }
 }
