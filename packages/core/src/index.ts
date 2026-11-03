@@ -39,20 +39,6 @@ export {
   type ContactSheetEntry,
   type ContactSheetStyle,
 } from './pipeline/contact-sheet.js';
-// Deliberately narrow (mirrors the contact-sheet surface): the selection
-// parser, filename/index builders and pngSize are internals, reachable from
-// tests via the source path rather than pinned as published API.
-export {
-  exportStills,
-  stillsEntries,
-  stillsDir,
-  type StillsConfig,
-  type StillEntry,
-  type StillIndexEntry,
-  type StillsResult,
-  type StillsIndexMeta,
-  type ExportStillsInput,
-} from './pipeline/stills.js';
 export { previewStep, type PreviewOptions, type PreviewResult } from './pipeline/preview.js';
 export { probeAdapterSetup } from './pipeline/preflight.js';
 

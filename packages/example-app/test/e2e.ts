@@ -6,13 +6,13 @@
 import { strict as assert } from 'node:assert';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
-import { render, previewStep, probeAdapterSetup, probeDurationMs, detectFlashOffsetMs, contactSheetPath, stillsDir, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
+import { render, previewStep, probeAdapterSetup, probeDurationMs, detectFlashOffsetMs, contactSheetPath, SilentProvider, StepError, tutorial, step, type TutorialAdapter } from 'tutorial-forge';
 // Internal (not public API) — exercised from source under tsx for #10 coverage.
 import { instrumentPage } from '../../core/src/browser/instrument.ts';
 import { CURSOR_INIT_SCRIPT } from '../../core/src/browser/cursor.ts';
@@ -44,7 +44,6 @@ try {
     keepWorkDir: true,
     ttsCacheDir: join(outDir, 'tts-cache'),
     contactSheet: true, // exercises per-step screenshots + contact-sheet assembly (#9)
-    stills: true, // exercises the documentation-stills export (#71)
   });
 
   assert.ok(existsSync(output), 'output mp4 exists');
@@ -105,52 +104,6 @@ try {
     assert.ok(existsSync(join(outDir, 'work', 'steps', `${s.id}.png`)), `step screenshot kept: ${s.id}`);
   }
 
-  // #71 — documentation stills exported next to the video: one PNG per step,
-  // index-prefixed, plus a JSON/markdown index carrying narration as alt text.
-  {
-    const stills = result.stills;
-    assert.ok(stills && stills.dir, 'stills directory emitted');
-    assert.equal(stills!.dir, stillsDir(output), 'stills land in <name>-stills next to the video');
-    assert.equal(stills!.missing.length, 0, 'every step had a frame to export');
-    assert.equal(stills!.kept, 0, 'a fresh export carries nothing forward');
-    assert.equal(stills!.pruned, 0, 'a fresh export has no orphans to remove');
-    assert.equal(
-      stills!.files.length,
-      result.manifest.steps.length,
-      'one still per step',
-    );
-    for (const f of stills!.files) assert.ok(existsSync(f), `still exists: ${f}`);
-    // Lives outside the work dir, so it survives work-dir cleanup by construction.
-    assert.ok(
-      !stills!.dir!.startsWith(join(outDir, 'work')),
-      'stills dir is outside the work dir (survives cleanup)',
-    );
-
-    assert.ok(stills!.indexMarkdownPath && existsSync(stills!.indexMarkdownPath), 'index.md written');
-    const index = JSON.parse(readFileSync(stills!.indexJsonPath!, 'utf8'));
-    assert.equal(index.tutorialId, result.manifest.tutorialId, 'index names the tutorial');
-    assert.equal(index.stills.length, result.manifest.steps.length, 'index covers every still');
-    assert.deepEqual(
-      index.stills.map((e: { narration: string }) => e.narration),
-      result.manifest.steps.map((st) => st.narration),
-      'index carries each step narration verbatim (the alt text)',
-    );
-    assert.equal(index.stills[0].file, `01-${result.manifest.steps[0]!.id}.png`, 'index-prefixed filenames');
-    // record.ts pins deviceScaleFactor: 2, so this is exact and machine-independent
-    // — asserting >= would pass if the DSF silently dropped to 1.
-    assert.deepEqual(
-      index.pixelSize,
-      { width: index.viewport.width * 2, height: index.viewport.height * 2 },
-      'stills are exactly 2x the CSS viewport (deviceScaleFactor: 2)',
-    );
-    const md = readFileSync(stills!.indexMarkdownPath!, 'utf8');
-    assert.ok(
-      md.includes(`![${result.manifest.steps[0]!.narration}](01-${result.manifest.steps[0]!.id}.png)`),
-      'markdown index has a paste-ready captioned image',
-    );
-    console.log(`e2e OK [stills]: ${stills!.files.length} images + index in ${stills!.dir}`);
-  }
-
   // Expected length = trimmed body + the intro/recap cards composited around it (#37).
   const bodyMs = result.manifest.totalDurationMs - (result.manifest.steps[0]!.startMs - 300);
   const expectedMs = bodyMs + result.cardsDurationMs;
@@ -195,7 +148,6 @@ try {
       keepWorkDir: true,
       phase: 'record',
       contactSheet: true,
-      stills: true,
     });
     assert.ok(
       recordOnly.contactSheetPath && existsSync(recordOnly.contactSheetPath),
@@ -205,18 +157,8 @@ try {
       !existsSync(join(recordOnlyDir, 'tts.json')),
       'record-only phase synthesized no TTS (no tts.json written)',
     );
-    // #71 — the documented cheap path: a full image set with no TTS and no ffmpeg.
-    assert.ok(
-      recordOnly.stills?.files.length === gettingStarted.steps.length,
-      'phase=record exported a still per step with no TTS',
-    );
-    console.log('e2e OK [phase-record-no-tts]: TTS-free contact sheet + stills on a fresh work dir (#50/#71)');
+    console.log('e2e OK [phase-record-no-tts]: TTS-free contact sheet on a fresh work dir (#50)');
   }
-
-  // #71 — localized stills: per-language directory, translated alt text, and
-  // byte-identical filenames so a docs site can swap directories per locale.
-  // (Per-lang dirs are also what keeps parallel --render-concurrency jobs from
-  // pruning each other's images.)
 
   // Localized render: load the Spanish sidecar the way the CLI would and
   // verify the pipeline produces a Spanish video + subtitles.
@@ -232,7 +174,6 @@ try {
     ttsCacheDir: join(outDir, 'tts-cache'),
     lang: 'es',
     zoom: true, // exercises the zoom-on-callout filter path
-    stills: true, // #71 — localized stills ride along at no extra render cost
   });
   assert.ok(existsSync(esOutput), 'es output mp4 exists');
   assert.equal(esResult.manifest.lang, 'es', 'manifest records the language');
@@ -247,29 +188,6 @@ try {
     return m ? (+m[1]! * 3600 + +m[2]! * 60 + +m[3]!) * 1000 + +m[4]! : 0;
   })();
   assert.ok(esFirstCueMs >= 3000, `es first subtitle starts after the intro card (got ${esFirstCueMs}ms)`);
-  // #71 — localized stills: own directory, Spanish alt text, same filenames.
-  {
-    const esStills = esResult.stills!;
-    assert.equal(esStills.dir, stillsDir(esOutput), 'es stills get their own directory');
-    assert.ok(esStills.dir!.endsWith('.es-stills'), `per-language stills dir (got ${esStills.dir})`);
-    const esIndex = JSON.parse(readFileSync(esStills.indexJsonPath!, 'utf8'));
-    assert.equal(esIndex.lang, 'es', 'es index records the language');
-    assert.ok(
-      esIndex.stills[0].narration.includes('Bienvenido'),
-      'es alt text is the translated narration',
-    );
-    // Step ids are stable through localization, so filenames match the source
-    // render byte-for-byte — a docs site can swap one directory for another.
-    assert.deepEqual(
-      esIndex.stills.map((e: { file: string }) => e.file),
-      JSON.parse(readFileSync(result.stills!.indexJsonPath!, 'utf8')).stills.map(
-        (e: { file: string }) => e.file,
-      ),
-      'localized stills reuse the source filenames',
-    );
-    console.log(`e2e OK [es-stills]: ${esStills.files.length} images in ${esStills.dir}`);
-  }
-
   console.log(`e2e OK [es]: ${esOutput} (${(esResult.outputDurationMs / 1000).toFixed(1)}s)`);
 
   // Idle speed-up: a tutorial with a long silent wait must come out shorter,
@@ -691,70 +609,13 @@ try {
         workDir: join(outDir, 'work-partial'),
         ttsCacheDir: join(outDir, 'tts-cache'),
         contactSheet: true,
-        stills: true,
       });
     } catch (err) {
       perr = err as StepError;
     }
     assert.ok(perr instanceof StepError && perr.stepId === 'boom', 'partial render failed at the bad step');
     assert.ok(existsSync(contactSheetPath(partialOutput)), 'partial contact sheet emitted on step failure (#20)');
-    // #71 — the same bargain for stills: the two steps that completed are exported.
-    const partialStills = stillsDir(partialOutput);
-    assert.ok(existsSync(join(partialStills, '01-ok-1.png')), 'partial stills include step 1');
-    assert.ok(existsSync(join(partialStills, '02-ok-2.png')), 'partial stills include step 2');
-    assert.ok(!existsSync(join(partialStills, '03-boom.png')), 'the failed step has no still');
-    const partialIndex = JSON.parse(readFileSync(join(partialStills, 'index.json'), 'utf8'));
-    assert.equal(partialIndex.stills.length, 2, 'partial index describes only what was written');
-    console.log(`e2e OK [partial-sheet/stills]: ${contactSheetPath(partialOutput)} + ${partialStills}`);
-
-    // #71 — a *selected* subset that spans the failing step must still export
-    // the selected steps that completed, not abandon the whole export because
-    // one selected id is absent from the failure manifest.
-    const selOutput = join(outDir, 'partial-selected.mp4');
-    let selErr: StepError | null = null;
-    try {
-      await render(partialBroken, adapter, {
-        tts: SilentProvider(),
-        output: selOutput,
-        workDir: join(outDir, 'work-partial-selected'),
-        ttsCacheDir: join(outDir, 'tts-cache'),
-        stills: { steps: 'ok-2..boom' },
-      });
-    } catch (err) {
-      selErr = err as StepError;
-    }
-    assert.ok(selErr instanceof StepError, 'selected partial render still throws StepError');
-    const selStills = stillsDir(selOutput);
-    assert.ok(existsSync(join(selStills, '02-ok-2.png')), 'selected completed step exported');
-    assert.ok(!existsSync(join(selStills, '03-boom.png')), 'the failed step has no still');
-    assert.ok(!existsSync(join(selStills, '01-ok-1.png')), 'unselected step not exported');
-    console.log(`e2e OK [partial-selected-stills]: ${selStills}`);
-  }
-  // #71 — a stills export failure must never cost a successful render its MP4.
-  // A plain file occupying the stills directory path makes ensureDir throw;
-  // the render must warn, carry on through post, and report stills: null.
-  {
-    const oneStep = tutorial('Blocked stills', [
-      step('A single step, so this render is cheap.', async () => {}, { id: 'only' }),
-    ], { id: 'blocked-stills' });
-    const blockedOutput = join(outDir, 'blocked-stills.mp4');
-    // Occupy <name>-stills with a regular file.
-    writeFileSync(stillsDir(blockedOutput), 'I am a file, not a directory');
-
-    const blocked = await render(oneStep, adapter, {
-      tts: SilentProvider(),
-      output: blockedOutput,
-      workDir: join(outDir, 'work-blocked'),
-      ttsCacheDir: join(outDir, 'tts-cache'),
-      cards: false,
-      chapters: false,
-      stills: true,
-    });
-
-    assert.ok(existsSync(blockedOutput), 'render produced the mp4 despite the stills failure');
-    assert.ok(blocked.outputDurationMs > 0, 'the video is real, not a stub');
-    assert.equal(blocked.stills, null, 'stills reported as not exported');
-    console.log('e2e OK [stills-failure-isolated]: mp4 survived a failing stills export');
+    console.log(`e2e OK [partial-sheet]: ${contactSheetPath(partialOutput)}`);
   }
 } finally {
   await close();
