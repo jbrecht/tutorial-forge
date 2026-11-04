@@ -115,7 +115,8 @@ export function enforceMinChapterDuration(chapters: Chapter[], minMs: number): C
 
 /**
  * A short, human chapter title from a step's narration: its first sentence,
- * trimmed and capped. Falls back to a humanized step id for silent steps.
+ * trimmed and capped. Falls back to a humanized step id for silent steps. A
+ * `maxChars` below 1 means no cap.
  */
 export function deriveChapterTitle(narration: string, id: string, maxChars = 50): string {
   const text = narration.replace(/\s+/g, ' ').trim();
@@ -127,28 +128,37 @@ export function deriveChapterTitle(narration: string, id: string, maxChars = 50)
     /^(.*?[.!?](?:[”’"'](?=\s+[\p{Lu}\p{Lt}\p{N}¿¡“‘"']|$))?)(\s|$)/u.exec(text)?.[1] ?? text;
   // Drop a single trailing period; keep ! and ? and an ellipsis ("Save as...").
   const title = firstSentence.trim().replace(/(?<!\.)\.([”’"']?)$/, '$1');
-  if (title.length <= maxChars) return title;
+  if (title.length <= maxChars || !(maxChars >= 1)) return title;
   // Cut, then close any quote the cut left open: `click “Nuev…”`, not `click “Nuev…`.
+  // An opener the cut ends on is dropped, so there's never an empty `“…”`.
   let keep = maxChars - 1;
   for (;;) {
-    const cut = title.slice(0, keep).trimEnd();
+    const cut = title.slice(0, keep).replace(/[\s“‘„‚«»"]+$/u, '');
     const closers = openQuoteClosers(cut);
     if (cut.length + 1 + closers.length <= maxChars) return cut + '…' + closers;
     keep = Math.max(0, keep - closers.length);
   }
 }
 
-const QUOTE_PAIRS: Record<string, string> = { '“': '”', '‘': '’', '«': '»', '„': '“' };
+// Each opener with the closers that end it; the first is the one appended.
+// Polish „…” and German „…“, ‚…‘ and »…« all occur in localized narration.
+const QUOTE_PAIRS: Record<string, string> = { '“': '”', '‘': '’', '«': '»', '»': '«', '„': '“”', '‚': '‘’' };
 
 /** The closers, innermost first, for quotes `s` opens and doesn't close. */
 function openQuoteClosers(s: string): string {
   const open: string[] = [];
+  let prev = ' ';
   for (const ch of s) {
-    if (open.at(-1) === ch) open.pop();
+    if (open.at(-1)?.includes(ch)) open.pop();
     else if (QUOTE_PAIRS[ch]) open.push(QUOTE_PAIRS[ch]);
-    else if (ch === '"') open.push('"');
+    // A straight " opens only at a word start, so an inch mark (27") doesn't.
+    else if (ch === '"' && /[\s([{]/u.test(prev)) open.push('"');
+    prev = ch;
   }
-  return open.reverse().join('');
+  return open
+    .reverse()
+    .map((c) => c[0])
+    .join('');
 }
 
 function humanizeId(id: string): string {

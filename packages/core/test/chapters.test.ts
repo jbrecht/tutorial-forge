@@ -165,6 +165,40 @@ describe('deriveChapterTitle', () => {
     expect(deep).toBe('Now click “Rename ‘Draft co…’”');
     expect(deep).toHaveLength(30);
   });
+
+  it('closes each quote style with its own closer at the cap', () => {
+    const at = (s: string, n: number) => deriveChapterTitle(s, 'x', n);
+    expect(at('Click "Edit" and then click "Save changes" to finish.', 40)).toBe('Click "Edit" and then click "Save chan…"');
+    expect(at('Cliquez sur « Enregistrer les modifications ».', 25)).toBe('Cliquez sur « Enregistr…»');
+    expect(at('Klicke auf „Speichern und schließen“ jetzt.', 20)).toBe('Klicke auf „Speich…“');
+    expect(at('Klicke auf »Speichern und schließen« jetzt.', 20)).toBe('Klicke auf »Speich…«');
+    expect(at('Klicke auf ‚Speichern und schließen‘ jetzt.', 20)).toBe('Klicke auf ‚Speich…‘');
+  });
+
+  it('adds no closer for a quote that is already closed, or is not a quote', () => {
+    const title = (s: string) => deriveChapterTitle(s, 'x');
+    expect(title('Kliknij „Zapisz” i poczekaj, aż pojawi się komunikat o sukcesie zapisu.')).toBe(
+      'Kliknij „Zapisz” i poczekaj, aż pojawi się komuni…',
+    );
+    expect(title('Klicke auf »Speichern« und dann auf die Schaltfläche unten rechts.')).toBe(
+      'Klicke auf »Speichern« und dann auf die Schaltflä…',
+    );
+    expect(title('Set the 27" monitor to the 1080p resolution option in the list.')).toBe(
+      'Set the 27" monitor to the 1080p resolution optio…',
+    );
+  });
+
+  it('never leaves an empty quote when the cut lands on an opener', () => {
+    expect(deriveChapterTitle('Open the settings panel and then click on “Save changes”.', 'x', 45)).toBe(
+      'Open the settings panel and then click on…',
+    );
+  });
+
+  it('treats a maxChars below 1 as no cap, without hanging', () => {
+    expect(deriveChapterTitle('Click Save now.', 'x', 0)).toBe('Click Save now');
+    expect(deriveChapterTitle('Click Save now.', 'x', 0.5)).toBe('Click Save now');
+    expect(deriveChapterTitle('Click Save now.', 'x', 1)).toBe('…');
+  });
 });
 
 describe('enforceMinChapterDuration', () => {
