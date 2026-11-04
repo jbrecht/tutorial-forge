@@ -78,7 +78,8 @@ export interface Step<S = unknown> {
   settleMs?: number;
   /**
    * Opt this step out of the load-time pedagogy lints (see {@link LintOptions})
-   * — for an intentionally long narration or a deliberately multi-action step.
+   * — for an intentionally long narration, a deliberately multi-action step, or
+   * a `+` the narration really needs.
    * Lints are warnings only and never fail a render; this just silences them.
    */
   lint?: false;
@@ -148,7 +149,7 @@ export interface Tutorial<S = unknown> {
   teardown?(page: Page, ctx: StepContext<S>): Promise<void>;
   /**
    * Tune or disable the load-time pedagogy lints (see {@link LintOptions}).
-   * Omitted → defaults on (over-long-narration only). `false` → all off.
+   * Omitted → defaults on (over-long narration and label glyphs). `false` → all off.
    */
   lint?: LintOptions | false;
 }

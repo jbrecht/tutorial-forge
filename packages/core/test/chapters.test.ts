@@ -108,6 +108,21 @@ describe('deriveChapterTitle', () => {
     expect(deriveChapterTitle('Ready? Here we go.', 'x')).toBe('Ready?');
   });
 
+  it('ends the first sentence at a closing quote after the punctuation (#81)', () => {
+    expect(deriveChapterTitle('Click “Save.” Then wait for the toast.', 'x')).toBe('Click “Save”');
+    expect(deriveChapterTitle('Click "Save." Then wait.', 'x')).toBe('Click "Save"');
+    expect(deriveChapterTitle('Is it “Done?” Check the list.', 'x')).toBe('Is it “Done?”');
+    expect(deriveChapterTitle('Click “Save”. Then wait.', 'x')).toBe('Click “Save”');
+    expect(deriveChapterTitle('Haz clic en “Guardar.” ¿Listo?', 'x')).toBe('Haz clic en “Guardar”');
+  });
+
+  it('keeps going past a quoted label that ends in punctuation mid-sentence', () => {
+    expect(deriveChapterTitle('Click “Forgot password?” to reset it. Then wait.', 'x')).toBe(
+      'Click “Forgot password?” to reset it',
+    );
+    expect(deriveChapterTitle('Select “Inc.” from the list.', 'x')).toBe('Select “Inc.” from the list');
+  });
+
   it('collapses whitespace', () => {
     expect(deriveChapterTitle('Open   the\n  Events page.', 'x')).toBe('Open the Events page');
   });

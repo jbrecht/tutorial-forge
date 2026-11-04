@@ -120,8 +120,12 @@ export function enforceMinChapterDuration(chapters: Chapter[], minMs: number): C
 export function deriveChapterTitle(narration: string, id: string, maxChars = 50): string {
   const text = narration.replace(/\s+/g, ' ').trim();
   if (!text) return humanizeId(id);
-  const firstSentence = /^(.*?[.!?])(\s|$)/.exec(text)?.[1] ?? text;
-  let title = firstSentence.trim().replace(/\.$/, ''); // drop a single trailing period; keep ! and ?
+  // A closing quote may follow the punctuation (`Click “Save.” Then…`, #81), but
+  // only ends the sentence when a new one starts: `Click “Forgot password?” to
+  // reset it` is one sentence.
+  const firstSentence =
+    /^(.*?[.!?](?:[”’"'](?=\s+[\p{Lu}\p{Lt}\p{N}¿¡“‘"']|$))?)(\s|$)/u.exec(text)?.[1] ?? text;
+  let title = firstSentence.trim().replace(/\.([”’"']?)$/, '$1'); // drop a single trailing period; keep ! and ?
   if (title.length > maxChars) title = title.slice(0, maxChars - 1).trimEnd() + '…';
   return title;
 }

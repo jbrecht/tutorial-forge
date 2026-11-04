@@ -18,6 +18,11 @@ Everything below is opt-in. Notes for existing consumers:
 - `StepError` messages are richer (multi-line, with artifact paths). If you parsed them, prefer the new structured `error.artifacts` field.
 - The timing manifest gained optional fields (`lang`, `capture`). Old kept work dirs still post-process fine.
 
+## Unreleased
+
+- **Narration guidance and lint for control names (#81).** `docs/writing-tutorials.md` now says to quote a control's name in narration (`Click “Save”`) and to leave out glyphs from the button label. In umami's ElevenLabs renders, `Click Add someone…` was read as two sentences and `Click + Add someone…` broke at the `+`. The quoted form paced naturally. That's one voice and one take per wording, and OpenAI TTS is untested. A new default-on lint warns at load time when a step's narration contains `+`, `→`, `›` or `•`, naming the tutorial, step and glyph. A `+` inside a word or number ("C++", "+1") doesn't count. Like the other narration lints it's advisory, and `step(..., { lint: false })` silences it. The example tutorial now quotes its control names too.
+- **Chapter titles end at a closing quote (#81).** A chapter title is the step's first sentence. With narration like `Click “Save.” Then…`, it used to run past the quote into the next sentence. Now it stops at the quote and reads `Click “Save”`.
+
 ## 0.13.0 — parallel batch rendering
 
 - **`render --phase record` runs without a prior `tts` phase (#50).** The TTS-free framing check — `--phase record --contact-sheet`, used to verify selectors and framing across a whole tutorial before paying for narration — no longer throws `run the tts phase first` on a fresh work dir. When `tts.json` is absent it falls back to silent placeholder timings (steps pace as silent), so you get a contact sheet at zero TTS cost. `--phase post` still requires real timings. New exports: `silentTTSResult`, `loadTTSResultIfPresent`.

@@ -17,7 +17,7 @@ export default tutorial('Getting started with Lumen Events', [
     { id: 'open-events' },
   ),
   step(
-    'To add an event, click the New event button. A dialog opens where you can fill in the details.',
+    'To add an event, click the “New event” button. A dialog opens where you can fill in the details.',
     async (page) => {
       await page.getByRole('button', { name: 'New event' }).click();
     },
@@ -38,7 +38,7 @@ export default tutorial('Getting started with Lumen Events', [
     { id: 'pick-type' },
   ),
   step(
-    'Click Create event. Saving takes a moment, and the new event appears in the list as a draft.',
+    'Click “Create event”. Saving takes a moment, and the new event appears in the list as a draft.',
     async (page) => {
       await page.getByRole('button', { name: 'Create event' }).click();
     },
