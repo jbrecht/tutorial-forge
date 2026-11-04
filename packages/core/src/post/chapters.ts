@@ -125,9 +125,30 @@ export function deriveChapterTitle(narration: string, id: string, maxChars = 50)
   // reset it` is one sentence.
   const firstSentence =
     /^(.*?[.!?](?:[”’"'](?=\s+[\p{Lu}\p{Lt}\p{N}¿¡“‘"']|$))?)(\s|$)/u.exec(text)?.[1] ?? text;
-  let title = firstSentence.trim().replace(/\.([”’"']?)$/, '$1'); // drop a single trailing period; keep ! and ?
-  if (title.length > maxChars) title = title.slice(0, maxChars - 1).trimEnd() + '…';
-  return title;
+  // Drop a single trailing period; keep ! and ? and an ellipsis ("Save as...").
+  const title = firstSentence.trim().replace(/(?<!\.)\.([”’"']?)$/, '$1');
+  if (title.length <= maxChars) return title;
+  // Cut, then close any quote the cut left open: `click “Nuev…”`, not `click “Nuev…`.
+  let keep = maxChars - 1;
+  for (;;) {
+    const cut = title.slice(0, keep).trimEnd();
+    const closers = openQuoteClosers(cut);
+    if (cut.length + 1 + closers.length <= maxChars) return cut + '…' + closers;
+    keep = Math.max(0, keep - closers.length);
+  }
+}
+
+const QUOTE_PAIRS: Record<string, string> = { '“': '”', '‘': '’', '«': '»', '„': '“' };
+
+/** The closers, innermost first, for quotes `s` opens and doesn't close. */
+function openQuoteClosers(s: string): string {
+  const open: string[] = [];
+  for (const ch of s) {
+    if (open.at(-1) === ch) open.pop();
+    else if (QUOTE_PAIRS[ch]) open.push(QUOTE_PAIRS[ch]);
+    else if (ch === '"') open.push('"');
+  }
+  return open.reverse().join('');
 }
 
 function humanizeId(id: string): string {

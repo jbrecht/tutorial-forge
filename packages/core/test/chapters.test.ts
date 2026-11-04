@@ -114,6 +114,15 @@ describe('deriveChapterTitle', () => {
     expect(deriveChapterTitle('Is it “Done?” Check the list.', 'x')).toBe('Is it “Done?”');
     expect(deriveChapterTitle('Click “Save”. Then wait.', 'x')).toBe('Click “Save”');
     expect(deriveChapterTitle('Haz clic en “Guardar.” ¿Listo?', 'x')).toBe('Haz clic en “Guardar”');
+    expect(deriveChapterTitle('He typed “Stop.” 3 events appear.', 'x')).toBe('He typed “Stop”');
+    expect(deriveChapterTitle('Is it “Done?” “Yes,” says the list.', 'x')).toBe('Is it “Done?”');
+    expect(deriveChapterTitle('Type ‘Hello.’ Then press Enter.', 'x')).toBe('Type ‘Hello’');
+    expect(deriveChapterTitle("Type 'Hello.' Then press Enter.", 'x')).toBe("Type 'Hello'");
+  });
+
+  it('keeps an ellipsis, quoted or not', () => {
+    expect(deriveChapterTitle('Click “Save as...” Then pick a folder.', 'x')).toBe('Click “Save as...”');
+    expect(deriveChapterTitle('Wait... Then click it.', 'x')).toBe('Wait...');
   });
 
   it('keeps going past a quoted label that ends in punctuation mid-sentence', () => {
@@ -141,6 +150,20 @@ describe('deriveChapterTitle', () => {
     const title = deriveChapterTitle('B'.repeat(60) + '.', 'x');
     expect(title).toHaveLength(50);
     expect(title.endsWith('…')).toBe(true);
+  });
+
+  it('closes a quote the cap cuts open, staying within the cap', () => {
+    const es = deriveChapterTitle(
+      'Para añadir un evento, haz clic en el botón “Nuevo evento”. Se abre un diálogo.',
+      'x',
+    );
+    expect(es).toBe('Para añadir un evento, haz clic en el botón “Nue…”');
+    expect(es).toHaveLength(50);
+    const nested = deriveChapterTitle('Open the settings, then click “Rename ‘Draft copy’ now” to finish.', 'x', 40);
+    expect(nested).toBe('Open the settings, then click “Rename…”');
+    const deep = deriveChapterTitle('Now click “Rename ‘Draft copy’ now” please.', 'x', 30);
+    expect(deep).toBe('Now click “Rename ‘Draft co…’”');
+    expect(deep).toHaveLength(30);
   });
 });
 

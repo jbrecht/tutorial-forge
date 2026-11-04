@@ -189,10 +189,30 @@ describe('narration lints', () => {
       expect(warn).not.toHaveBeenCalled();
     });
 
+    it('treats shortcuts the way the docs say', () => {
+      const warn = warns();
+      tutorial('x', [step('Press Ctrl+S to save, or use a_+b and x++.', noop)]);
+      expect(warn).not.toHaveBeenCalled();
+      tutorial('x', [step('Press Ctrl + S to save.', noop), step('Two + two.', noop)]);
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+
     it('lint: false on the step silences it', () => {
       const warn = warns();
       tutorial('x', [step('Click + Add guest.', noop, { lint: false })]);
       expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('lint: false on the tutorial silences it', () => {
+      const warn = warns();
+      tutorial('x', [step('Click + Add guest.', noop)], { lint: false });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('is not turned off by maxNarrationWords: 0', () => {
+      const warn = warns();
+      tutorial('x', [step('Click + Add guest.', noop)], { lint: { maxNarrationWords: 0 } });
+      expect(warn).toHaveBeenCalledTimes(1);
     });
   });
 

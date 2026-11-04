@@ -21,7 +21,10 @@ Everything below is opt-in. Notes for existing consumers:
 ## Unreleased
 
 - **Narration guidance and lint for control names (#81).** `docs/writing-tutorials.md` now says to quote a control's name in narration (`Click “Save”`) and to leave out glyphs from the button label. In umami's ElevenLabs renders, `Click Add someone…` was read as two sentences and `Click + Add someone…` broke at the `+`. The quoted form paced naturally. That's one voice and one take per wording, and OpenAI TTS is untested. A new default-on lint warns at load time when a step's narration contains `+`, `→`, `›` or `•`, naming the tutorial, step and glyph. A `+` inside a word or number ("C++", "+1") doesn't count. Like the other narration lints it's advisory, and `step(..., { lint: false })` silences it. The example tutorial now quotes its control names too.
-- **Chapter titles end at a closing quote (#81).** A chapter title is the step's first sentence. With narration like `Click “Save.” Then…`, it used to run past the quote into the next sentence. Now it stops at the quote and reads `Click “Save”`.
+- **Chapter titles and quoted control names (#81).** A chapter title is the step's first sentence.
+  - With narration like `Click “Save.” Then…`, the title used to run past the quote into the next sentence. Now it stops at the quote and reads `Click “Save”`. This covers `”`, `’`, `"` and `'` closers, when a new sentence follows. A label like `“Forgot password?”` in mid-sentence doesn't end the title.
+  - A title that ends in an ellipsis (`Wait...`, `“Save as...”`) keeps all three dots.
+  - When the 50-character cap cuts inside a quote, the title now closes it after the ellipsis: `click “Nue…”`.
 
 ## 0.13.0 — parallel batch rendering
 
