@@ -188,6 +188,29 @@ describe('deriveChapterTitle', () => {
     );
   });
 
+  it('leaves a closed label alone when the cut lands just after it', () => {
+    const at = (s: string, n: number) => deriveChapterTitle(s, 'x', n);
+    const en = 'Click "Save" and then wait for the green toast to appear at the top of the page.';
+    expect(at(en, 13)).toBe('Click "Save"…');
+    expect(at(en, 14)).toBe('Click "Save"…');
+    expect(at('Klicke auf „Speichern“ und warte dann, bis die grüne Meldung oben erscheint.', 24)).toBe(
+      'Klicke auf „Speichern“…',
+    );
+    expect(at('Cliquez sur « Enregistrer » puis attendez que le message vert apparaisse.', 29)).toBe(
+      'Cliquez sur « Enregistrer »…',
+    );
+  });
+
+  it('opens a straight " after punctuation, and closes Swedish »…» with »', () => {
+    const at = (s: string, n: number) => deriveChapterTitle(s, 'x', n);
+    expect(at('Open the menu—"Save changes and close the window" is the last item there.', 21)).toBe(
+      'Open the menu—"Save…"',
+    );
+    expect(at('Klicka på »Spara» och vänta sedan tills det gröna meddelandet visas.', 25)).toBe(
+      'Klicka på »Spara» och vä…',
+    );
+  });
+
   it('never leaves an empty quote when the cut lands on an opener', () => {
     expect(deriveChapterTitle('Open the settings panel and then click on “Save changes”.', 'x', 45)).toBe(
       'Open the settings panel and then click on…',

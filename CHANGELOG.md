@@ -24,7 +24,7 @@ Everything below is opt-in. Notes for existing consumers:
 - **Chapter titles and quoted control names (#81).** A chapter title is the step's first sentence.
   - With narration like `Click “Save.” Then…`, the title used to run past the quote into the next sentence. Now it stops at the quote and reads `Click “Save”`. This covers `”`, `’`, `"` and `'` closers, when a new sentence follows. A label like `“Forgot password?”` in mid-sentence doesn't end the title.
   - A title that ends in an ellipsis (`Wait...`, `“Save as...”`) keeps all three dots.
-  - When the 50-character cap cuts inside a quote, the title now closes it after the ellipsis: `click “Nue…”`. This covers `“”`, `‘’`, `«»`, `»«`, `„“`, `„”`, `‚‘` and straight `"` pairs. A straight `'` is never closed, because it's usually an apostrophe. A cut that would leave an empty quote drops the opener instead.
+  - When the 50-character cap cuts inside a quote, the title now closes it after the ellipsis: `click “Nue…”`. This covers `“”`, `‘’`, `«»`, `»«`, `»»`, `„“`, `„”`, `‚‘` and straight `"` pairs. A straight `'` is never closed, because it's usually an apostrophe. A cut that would leave an empty quote drops the opener instead.
   - A `maxChars` below 1 passed to `deriveChapterTitle` now means no cap.
 
 ## 0.13.0 — parallel batch rendering
