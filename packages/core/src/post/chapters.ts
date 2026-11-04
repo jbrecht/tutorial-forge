@@ -160,7 +160,9 @@ function openQuotes(s: string): { closers: string; at: number }[] {
   for (let i = 0; i < s.length; i++) {
     const ch = s[i]!;
     if (open.at(-1)?.closers.includes(ch)) open.pop();
-    else if (QUOTE_PAIRS[ch]) open.push({ closers: QUOTE_PAIRS[ch], at: i });
+    // A » with a space after it is a breadcrumb separator (Settings » Privacy).
+    else if (QUOTE_PAIRS[ch] && !(ch === '»' && /\s/.test(s[i + 1] ?? '')))
+      open.push({ closers: QUOTE_PAIRS[ch], at: i });
     // A straight " opens only after a non-letter, so an inch mark (27") doesn't.
     else if (ch === '"' && !/[\p{L}\p{N}]/u.test(prev)) open.push({ closers: '"', at: i });
     prev = ch;

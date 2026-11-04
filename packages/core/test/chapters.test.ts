@@ -211,6 +211,12 @@ describe('deriveChapterTitle', () => {
     );
   });
 
+  it('reads a spaced » as a breadcrumb separator, not an opener', () => {
+    expect(deriveChapterTitle('Go to Settings » Privacy » Cookies and clear them all.', 'x', 26)).toBe(
+      'Go to Settings » Privacy…',
+    );
+  });
+
   it('never leaves an empty quote when the cut lands on an opener', () => {
     expect(deriveChapterTitle('Open the settings panel and then click on “Save changes”.', 'x', 45)).toBe(
       'Open the settings panel and then click on…',
