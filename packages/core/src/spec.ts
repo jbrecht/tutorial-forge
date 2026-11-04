@@ -5,6 +5,11 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 // SSML tags or ASCII control chars in narration usually mean copy-paste from
 // another TTS system; providers read them literally, so warn at load time.
 const SUSPICIOUS_NARRATION_RE = /<[a-z][^>]*>|[\x00-\x08\x0b\x0c\x0e-\x1f]/i;
+// Glyphs copied from a button label ("+ Add guest", "Next →"). ElevenLabs read
+// `+` as a sentence break (#81); `→ › •` are assumed to behave alike. A `+`
+// counts only when it isn't part of a word or number, so "C++", "Google+" and
+// "+1" pass.
+const LABEL_GLYPH_RE = /[→›•]|(?<![\p{L}\p{N}_+])\+(?![\p{N}+])/gu;
 
 // At ~150 words/min of speech, 60 words is ~24s on a single step — well past
 // the one-idea-per-step segmenting sweet spot. Tunable via LintOptions.
@@ -112,6 +117,14 @@ function lintTutorial<S>(t: Tutorial<S>, cfg: LintOptions): void {
             `split it so each step carries one idea (segmenting). Suppress with step({ lint: false }).`,
         );
       }
+    }
+    const glyphs = [...new Set(s.narration.match(LABEL_GLYPH_RE) ?? [])];
+    if (glyphs.length > 0) {
+      logger.warn(
+        `Tutorial "${t.id}" step ${i} ("${id}"): narration contains ${glyphs.map((g) => `"${g}"`).join(', ')}; ` +
+          `TTS can read a label glyph as a pause, so leave glyphs out and quote the control's name (Click “Add”). ` +
+          `Suppress with step({ lint: false }).`,
+      );
     }
     if (cfg.strict) {
       const actions = (s.run.toString().match(INSTRUMENTED_ACTION_RE) ?? []).length;

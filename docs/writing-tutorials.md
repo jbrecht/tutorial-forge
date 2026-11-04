@@ -32,7 +32,7 @@ export default tutorial('Getting started with Lumen Events', [
 - **opts.waitFor(page)** — awaited after `run()`. Playwright auto-waiting covers most readiness; use this for slow async operations. Prefer locator waits over timeouts:
 
   ```ts
-  step('Click Create. Saving takes a moment.', async (page) => {
+  step('Click “Create”. Saving takes a moment.', async (page) => {
     await page.getByRole('button', { name: 'Create event' }).click();
   }, {
     waitFor: async (page) => {
@@ -44,7 +44,7 @@ export default tutorial('Getting started with Lumen Events', [
 - **opts.focus(page)** — returns a locator to **anchor the cursor on at the start of the step**: it smooth-scrolls that control into frame and moves the fake cursor there, so narration about "this control" has a visual focus even when the step's action is elsewhere or it is pure narration. Decorative — a failure here is logged and skipped, never failing the render.
 
   ```ts
-  step('Now switch the status to Tickets open.', async (page) => {
+  step('Now switch the status to “Tickets open”.', async (page) => {
     await page.getByLabel('Status').selectOption('open');
   }, {
     // Usually unnecessary — the selectOption above already scrolls + anchors.
@@ -66,7 +66,8 @@ The engine already does the load-bearing pedagogy for you — it paces every ste
 - **Use signaling language.** Words like "notice…", "here…", "this is the…" direct attention to the element that matters — reinforcing what the cursor and callouts already point at. They turn a demonstration into a guided observation.
 - **Open with an objective, close with a recap.** Start the tutorial with a short pure-narration step that says what the learner will be able to do ("In this tour, we'll create your first event and adjust a workspace setting"). End with one that recaps what they accomplished. The opening primes attention (advance-organizer); the recap consolidates it (summary). Strict-mode lints check for both.
 - **Write for the ear, not the page.** Narration is *heard*, not read. Use short sentences and plain words; avoid parentheticals, semicolons, and anything that only parses on a second read. Don't paste paragraphs of on-screen text — doing so makes the eyes compete with the ears (the modality principle the tool otherwise protects for free).
-- **Name *what* and *where* — never bare "click here."** Say "click the **New event** button in the toolbar," not "click here." Deictic narration is meaningless to anyone watching sound-off, with captions, or with low vision, and it teaches the learner nothing transferable about the interface.
+- **Name *what* and *where* — never bare "click here."** Say "click the “New event” button in the toolbar," not "click here." Deictic narration is meaningless to anyone watching sound-off, with captions, or with low vision, and it teaches the learner nothing transferable about the interface.
+- **Quote a control's name, and leave out its glyphs.** Write `Click “Add someone to your party”`, not `Click Add someone to your party` or `Click + Add someone to your party`. Without quotes, TTS can hear the capital as a new sentence ("Click. Add someone…"), or run the words together if you lowercase them ("Click-add"). A `+` that's part of a button label read as a break, and `→`, `›` and `•` are assumed to do the same. The quotes do show up in subtitles. The evidence is thin: one ElevenLabs voice, one take per wording. OpenAI TTS hasn't been tested. The [label-glyph lint](#narration-lints) catches the glyphs.
 
 Because each chapter title is the first sentence of a step's narration (see [Chapters](#chapters)), a short, descriptive opening sentence does double duty — it teaches *and* it gives you clean navigation for free.
 
@@ -75,6 +76,7 @@ Because each chapter title is the first sentence of a step's narration (see [Cha
 `tutorial()` runs these principles as **load-time warnings** before any browser launches. They are advisory only — they never fail a render and never change the video; they just print a `warn` line pointing at the step.
 
 - **Over-long narration** *(on by default)* — warns when a step's narration exceeds `maxNarrationWords` (default **60** words, ~24s of speech), the segmenting signal that a step is carrying more than one idea.
+- **Label glyphs** *(on by default)* — warns when narration contains `+`, `→`, `›` or `•`, which usually come from a copied button label and which TTS can read as a pause. A `+` inside a word or number ("C++", "+1", "Ctrl+S") doesn't count, but a spaced one ("Ctrl + S", "2 + 2") does: write the shortcut without spaces, spell out "plus", or silence the step.
 - **Multiple instrumented actions per step** *(strict mode)* — warns when one `run()` performs three or more cursor-animated actions (clicks, fills, checks…), a best-effort segmenting heuristic.
 - **Missing objective / recap** *(strict mode)* — warns when the first step doesn't open with an objective or the last doesn't close with a recap.
 
@@ -82,7 +84,7 @@ Tune or disable them on the tutorial:
 
 ```ts
 export default tutorial('My tutorial', steps, {
-  // Defaults: over-long-narration on, heuristics off.
+  // Defaults: over-long-narration and label-glyph lints on, heuristics off.
   lint: { maxNarrationWords: 80, strict: true }, // tune the threshold; enable the heuristics
   // lint: false,                                // turn every lint off
 });
@@ -151,12 +153,12 @@ step('The list refreshes with your new row.', async (page) => {
 >
 > ```ts
 > // ❌ races the transition — can settle before the server action even dispatches
-> step('Switch the status to Tickets open.', async (page) => {
+> step('Switch the status to “Tickets open”.', async (page) => {
 >   await page.getByLabel('Status').selectOption('open');
 > }, { settleUntil: 'networkidle' })
 >
 > // ✅ best: wait on the committed UI — exactly as long as the repaint takes, no race
-> step('Switch the status to Tickets open.', async (page) => {
+> step('Switch the status to “Tickets open”.', async (page) => {
 >   await page.getByLabel('Status').selectOption('open');
 > }, { waitFor: (page) => page.getByText('Tickets open').waitFor() })
 >
@@ -164,7 +166,7 @@ step('The list refreshes with your new row.', async (page) => {
 > //    arm the response wait *before* the action, then await it. This closes the
 > //    transition gap without guessing — `waitForResponse` can't resolve until the
 > //    request it matches has actually fired and come back.
-> step('Switch the status to Tickets open.', async (page) => {
+> step('Switch the status to “Tickets open”.', async (page) => {
 >   const saved = page.waitForResponse(
 >     (r) => r.url().includes('/status') && r.request().method() === 'POST',
 >   );

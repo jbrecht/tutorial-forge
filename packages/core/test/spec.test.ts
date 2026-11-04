@@ -156,6 +156,66 @@ describe('narration lints', () => {
     expect(() => tutorial('x', [step(longLine(500), noop)])).not.toThrow();
   });
 
+  describe('label glyphs (#81)', () => {
+    it.each(['+', '→', '›', '•'])('warns once on "%s", naming the tutorial, step and glyph', (g) => {
+      const warn = warns();
+      tutorial('Glyphs', [step('Intro.', noop), step(`Click ${g} Add guest.`, noop, { id: 'add' })]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain(`Tutorial "glyphs" step 1 ("add"): narration contains "${g}"`);
+    });
+
+    it('lists several glyphs in a single warning', () => {
+      const warn = warns();
+      tutorial('x', [step('Click + Add, then Next →, then + Add again.', noop)]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain('narration contains "+", "→"; ');
+    });
+
+    it('catches a + glued to the label', () => {
+      const warn = warns();
+      tutorial('x', [step('Click +Add guest.', noop)]);
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a + inside a word or number', () => {
+      const warn = warns();
+      tutorial('x', [step('Write C++ on Google+ and Café+ and give it a +1.', noop)]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('does not warn on quoted control names', () => {
+      const warn = warns();
+      tutorial('x', [step('Click “Add someone to your party”.', noop)]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('treats shortcuts the way the docs say', () => {
+      const warn = warns();
+      tutorial('x', [step('Press Ctrl+S to save, or use a_+b and x++.', noop)]);
+      expect(warn).not.toHaveBeenCalled();
+      tutorial('x', [step('Press Ctrl + S to save.', noop), step('Two + two.', noop)]);
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+
+    it('lint: false on the step silences it', () => {
+      const warn = warns();
+      tutorial('x', [step('Click + Add guest.', noop, { lint: false })]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('lint: false on the tutorial silences it', () => {
+      const warn = warns();
+      tutorial('x', [step('Click + Add guest.', noop)], { lint: false });
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('is not turned off by maxNarrationWords: 0', () => {
+      const warn = warns();
+      tutorial('x', [step('Click + Add guest.', noop)], { lint: { maxNarrationWords: 0 } });
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('strict mode', () => {
     it('warns when a step bundles 3+ instrumented actions', () => {
       const warn = warns();

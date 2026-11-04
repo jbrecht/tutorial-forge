@@ -115,15 +115,59 @@ export function enforceMinChapterDuration(chapters: Chapter[], minMs: number): C
 
 /**
  * A short, human chapter title from a step's narration: its first sentence,
- * trimmed and capped. Falls back to a humanized step id for silent steps.
+ * trimmed and capped. Falls back to a humanized step id for silent steps. A
+ * `maxChars` below 1 means no cap.
  */
 export function deriveChapterTitle(narration: string, id: string, maxChars = 50): string {
   const text = narration.replace(/\s+/g, ' ').trim();
   if (!text) return humanizeId(id);
-  const firstSentence = /^(.*?[.!?])(\s|$)/.exec(text)?.[1] ?? text;
-  let title = firstSentence.trim().replace(/\.$/, ''); // drop a single trailing period; keep ! and ?
-  if (title.length > maxChars) title = title.slice(0, maxChars - 1).trimEnd() + '…';
-  return title;
+  // A closing quote may follow the punctuation (`Click “Save.” Then…`, #81), but
+  // only ends the sentence when a new one starts: `Click “Forgot password?” to
+  // reset it` is one sentence.
+  const firstSentence =
+    /^(.*?[.!?](?:[”’"'](?=\s+[\p{Lu}\p{Lt}\p{N}¿¡“‘"']|$))?)(\s|$)/u.exec(text)?.[1] ?? text;
+  // Drop a single trailing period; keep ! and ? and an ellipsis ("Save as...").
+  const title = firstSentence.trim().replace(/(?<!\.)\.([”’"']?)$/, '$1');
+  if (title.length <= maxChars || !(maxChars >= 1)) return title;
+  // Cut, then close any quote the cut left open: `click “Nuev…”`, not `click “Nuev…`.
+  // An opener the cut ends on is dropped, so there's never an empty `“…”`.
+  let keep = maxChars - 1;
+  for (;;) {
+    let cut = title.slice(0, keep).trimEnd();
+    let open = openQuotes(cut);
+    while (open.length > 0 && open.at(-1)!.at === cut.length - 1) {
+      cut = cut.slice(0, -1).trimEnd();
+      open = openQuotes(cut);
+    }
+    const closers = open
+      .reverse()
+      .map((q) => q.closers[0])
+      .join('');
+    if (cut.length + 1 + closers.length <= maxChars) return cut + '…' + closers;
+    keep = Math.max(0, keep - closers.length);
+  }
+}
+
+// Each opener with the closers that end it; the first is the one appended.
+// Polish „…”, German „…“, ‚…‘ and »…«, and Swedish »…» all occur in localized
+// narration.
+const QUOTE_PAIRS: Record<string, string> = { '“': '”', '‘': '’', '«': '»', '»': '«»', '„': '“”', '‚': '‘’' };
+
+/** The quotes `s` opens and doesn't close, outermost first, with where each opens. */
+function openQuotes(s: string): { closers: string; at: number }[] {
+  const open: { closers: string; at: number }[] = [];
+  let prev = ' ';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (open.at(-1)?.closers.includes(ch)) open.pop();
+    // A » with a space after it is a breadcrumb separator (Settings » Privacy).
+    else if (QUOTE_PAIRS[ch] && !(ch === '»' && /\s/.test(s[i + 1] ?? '')))
+      open.push({ closers: QUOTE_PAIRS[ch], at: i });
+    // A straight " opens only after a non-letter, so an inch mark (27") doesn't.
+    else if (ch === '"' && !/[\p{L}\p{N}]/u.test(prev)) open.push({ closers: '"', at: i });
+    prev = ch;
+  }
+  return open;
 }
 
 function humanizeId(id: string): string {

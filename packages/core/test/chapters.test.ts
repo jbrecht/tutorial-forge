@@ -108,6 +108,30 @@ describe('deriveChapterTitle', () => {
     expect(deriveChapterTitle('Ready? Here we go.', 'x')).toBe('Ready?');
   });
 
+  it('ends the first sentence at a closing quote after the punctuation (#81)', () => {
+    expect(deriveChapterTitle('Click “Save.” Then wait for the toast.', 'x')).toBe('Click “Save”');
+    expect(deriveChapterTitle('Click "Save." Then wait.', 'x')).toBe('Click "Save"');
+    expect(deriveChapterTitle('Is it “Done?” Check the list.', 'x')).toBe('Is it “Done?”');
+    expect(deriveChapterTitle('Click “Save”. Then wait.', 'x')).toBe('Click “Save”');
+    expect(deriveChapterTitle('Haz clic en “Guardar.” ¿Listo?', 'x')).toBe('Haz clic en “Guardar”');
+    expect(deriveChapterTitle('He typed “Stop.” 3 events appear.', 'x')).toBe('He typed “Stop”');
+    expect(deriveChapterTitle('Is it “Done?” “Yes,” says the list.', 'x')).toBe('Is it “Done?”');
+    expect(deriveChapterTitle('Type ‘Hello.’ Then press Enter.', 'x')).toBe('Type ‘Hello’');
+    expect(deriveChapterTitle("Type 'Hello.' Then press Enter.", 'x')).toBe("Type 'Hello'");
+  });
+
+  it('keeps an ellipsis, quoted or not', () => {
+    expect(deriveChapterTitle('Click “Save as...” Then pick a folder.', 'x')).toBe('Click “Save as...”');
+    expect(deriveChapterTitle('Wait... Then click it.', 'x')).toBe('Wait...');
+  });
+
+  it('keeps going past a quoted label that ends in punctuation mid-sentence', () => {
+    expect(deriveChapterTitle('Click “Forgot password?” to reset it. Then wait.', 'x')).toBe(
+      'Click “Forgot password?” to reset it',
+    );
+    expect(deriveChapterTitle('Select “Inc.” from the list.', 'x')).toBe('Select “Inc.” from the list');
+  });
+
   it('collapses whitespace', () => {
     expect(deriveChapterTitle('Open   the\n  Events page.', 'x')).toBe('Open the Events page');
   });
@@ -126,6 +150,83 @@ describe('deriveChapterTitle', () => {
     const title = deriveChapterTitle('B'.repeat(60) + '.', 'x');
     expect(title).toHaveLength(50);
     expect(title.endsWith('…')).toBe(true);
+  });
+
+  it('closes a quote the cap cuts open, staying within the cap', () => {
+    const es = deriveChapterTitle(
+      'Para añadir un evento, haz clic en el botón “Nuevo evento”. Se abre un diálogo.',
+      'x',
+    );
+    expect(es).toBe('Para añadir un evento, haz clic en el botón “Nue…”');
+    expect(es).toHaveLength(50);
+    const nested = deriveChapterTitle('Open the settings, then click “Rename ‘Draft copy’ now” to finish.', 'x', 40);
+    expect(nested).toBe('Open the settings, then click “Rename…”');
+    const deep = deriveChapterTitle('Now click “Rename ‘Draft copy’ now” please.', 'x', 30);
+    expect(deep).toBe('Now click “Rename ‘Draft co…’”');
+    expect(deep).toHaveLength(30);
+  });
+
+  it('closes each quote style with its own closer at the cap', () => {
+    const at = (s: string, n: number) => deriveChapterTitle(s, 'x', n);
+    expect(at('Click "Edit" and then click "Save changes" to finish.', 40)).toBe('Click "Edit" and then click "Save chan…"');
+    expect(at('Cliquez sur « Enregistrer les modifications ».', 25)).toBe('Cliquez sur « Enregistr…»');
+    expect(at('Klicke auf „Speichern und schließen“ jetzt.', 20)).toBe('Klicke auf „Speich…“');
+    expect(at('Klicke auf »Speichern und schließen« jetzt.', 20)).toBe('Klicke auf »Speich…«');
+    expect(at('Klicke auf ‚Speichern und schließen‘ jetzt.', 20)).toBe('Klicke auf ‚Speich…‘');
+  });
+
+  it('adds no closer for a quote that is already closed, or is not a quote', () => {
+    const title = (s: string) => deriveChapterTitle(s, 'x');
+    expect(title('Kliknij „Zapisz” i poczekaj, aż pojawi się komunikat o sukcesie zapisu.')).toBe(
+      'Kliknij „Zapisz” i poczekaj, aż pojawi się komuni…',
+    );
+    expect(title('Klicke auf »Speichern« und dann auf die Schaltfläche unten rechts.')).toBe(
+      'Klicke auf »Speichern« und dann auf die Schaltflä…',
+    );
+    expect(title('Set the 27" monitor to the 1080p resolution option in the list.')).toBe(
+      'Set the 27" monitor to the 1080p resolution optio…',
+    );
+  });
+
+  it('leaves a closed label alone when the cut lands just after it', () => {
+    const at = (s: string, n: number) => deriveChapterTitle(s, 'x', n);
+    const en = 'Click "Save" and then wait for the green toast to appear at the top of the page.';
+    expect(at(en, 13)).toBe('Click "Save"…');
+    expect(at(en, 14)).toBe('Click "Save"…');
+    expect(at('Klicke auf „Speichern“ und warte dann, bis die grüne Meldung oben erscheint.', 24)).toBe(
+      'Klicke auf „Speichern“…',
+    );
+    expect(at('Cliquez sur « Enregistrer » puis attendez que le message vert apparaisse.', 29)).toBe(
+      'Cliquez sur « Enregistrer »…',
+    );
+  });
+
+  it('opens a straight " after punctuation, and closes Swedish »…» with »', () => {
+    const at = (s: string, n: number) => deriveChapterTitle(s, 'x', n);
+    expect(at('Open the menu—"Save changes and close the window" is the last item there.', 21)).toBe(
+      'Open the menu—"Save…"',
+    );
+    expect(at('Klicka på »Spara» och vänta sedan tills det gröna meddelandet visas.', 25)).toBe(
+      'Klicka på »Spara» och vä…',
+    );
+  });
+
+  it('reads a spaced » as a breadcrumb separator, not an opener', () => {
+    expect(deriveChapterTitle('Go to Settings » Privacy » Cookies and clear them all.', 'x', 26)).toBe(
+      'Go to Settings » Privacy…',
+    );
+  });
+
+  it('never leaves an empty quote when the cut lands on an opener', () => {
+    expect(deriveChapterTitle('Open the settings panel and then click on “Save changes”.', 'x', 45)).toBe(
+      'Open the settings panel and then click on…',
+    );
+  });
+
+  it('treats a maxChars below 1 as no cap, without hanging', () => {
+    expect(deriveChapterTitle('Click Save now.', 'x', 0)).toBe('Click Save now');
+    expect(deriveChapterTitle('Click Save now.', 'x', 0.5)).toBe('Click Save now');
+    expect(deriveChapterTitle('Click Save now.', 'x', 1)).toBe('…');
   });
 });
 
