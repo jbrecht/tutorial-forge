@@ -7,8 +7,8 @@ tutorial-forge is a source-available (PolyForm Small Business) TypeScript librar
 - `docs/reviews/2026-06-13-pedagogy-review.md`: the pedagogical direction. The `instructional-designer` agent recommends; you weigh its recommendations against everything else and turn them into issues.
 
 ## What to check
-- Settled decisions, besides the Decision lines in the issues: the license stays PolyForm Small Business (since 0.11.1); rendering is serial by default, with concurrency opt-in under the adapter contract in `docs/adapters.md`; on PR #75 (not yet on `main`) `--stills` was cut back to its proven core after umami's field trial, and John's call is to hold crop, a filenames option and `capture: 'both'` until the second trial reports; don't propose them before it does.
+- Settled decisions, besides the Decision lines in the issues: the license stays PolyForm Small Business (since 0.11.1); rendering is serial by default, with concurrency opt-in under the adapter contract in `docs/adapters.md`; `--stills` was parked and removed from `main` after two umami trials, and its redesign is #82's sub-issues (#88 → #89 → #90), whose Decision lines settle the release, default frame, video fidelity and crop control; a filenames option and `capture: 'both'` stay out of scope.
 - Where new issues come from: umami's dogfooding, the reviewers' reports (qa-engineer, performance-engineer, designer), the instructional-designer's recommendations, and launch feedback.
 
 ## Defaults
-- This repo has no roadmap Project yet, so `roadmap.sh` finds nothing. John decides whether to set one up (conventions › Plans and roadmaps), so don't run the setup. Read the backlog with `gh issue list --state open --json number,title,labels,body,createdAt,comments`, `gh issue view <n> --comments` and `gh pr list --state merged --limit 20`, and give Priority as Now / Next / Later in your report rather than setting Project fields.
+- The roadmap is the "tutorial-forge Roadmap" Project, set up 2026-11-08 (CLAUDE.md › Roadmap). Read it with `roadmap.sh plan` and `roadmap.sh milestones`.
