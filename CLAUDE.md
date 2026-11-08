@@ -31,6 +31,18 @@ The shared agents come from kit (`kit@jbrecht`, enabled in `.claude/settings.jso
 
 The last three are tutorial-forge's own, in `.claude/agents/`; performance-engineer and publish-reviewer move to kit in jbrecht/kit#13. A feature-sized pipeline change runs `kit:code-reviewer`, `kit:qa-engineer` and `performance-engineer` together before it's called ready. There is no security-reviewer: the project has no server, auth or payment surface, so the pre-ship risk is package hygiene, which publish-reviewer owns. Revisit that if a feature adds a runtime trust boundary, such as fetching remote specs or assets.
 
+## Roadmap
+
+The roadmap is GitHub issues, managed with the `kit:roadmap` skill. Each kind of decision lives in exactly one place:
+- **Labels** say what kind of work: `bug`/`enhancement` plus areas `tts`, `recording`, `post`, `cli` and `documentation`. Never priority.
+- **Milestones** are goals worked through in order: Trustworthy text → Documentation stills → Teaching-first. No milestone means backlog.
+- **Owner:** John, who sets Priority and milestones and approves new issues.
+- **The "tutorial-forge Roadmap" Project** (https://github.com/users/jbrecht/projects/10) holds **Priority** (Now/Next/Later) and **Status** (Todo/In Progress/Done). Card order within a column is the sequence.
+- **Blocked-by links** record real dependencies. Big issues split into sub-issues.
+- **Why** a decision was made goes in the issue, as a "Decision (John, date)" line or a comment.
+
+New work becomes an issue first (labels, milestone, Status Todo); John sets Priority. Starting work on an issue: set its Status to In Progress, and put `Fixes #N` in the PR (`Part of #N` while a criterion can only be checked after merge; `kit:do-issue` step 7 has the rule). Change Priority or milestones only with John's approval.
+
 ## Releasing
 
 Both versions move together, and `CHANGELOG.md`'s `## Unreleased` becomes `## <version> — <theme>`. Run `publish-reviewer` first. Publish core before cli, each with `pnpm --filter <package> publish`, never `npm publish`: pnpm rewrites the cli's `"tutorial-forge": "workspace:*"` to the exact version, and npm ships it literally, which broke every install of cli@0.11.1. The cli pins core's exact version, so core has to be on the registry first. npm's 2FA needs an interactive one-time code, so John runs the two publish commands himself. Afterwards: `npm view tutorial-forge-cli@<version> dependencies.tutorial-forge` must not read `workspace:*`; then tag `v<version>`, push the tag, and create a GitHub Release from the CHANGELOG section.
