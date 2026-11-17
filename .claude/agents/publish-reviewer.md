@@ -70,6 +70,8 @@ app's `.env` must never be referenced by or bundled into a published package.
 
 ## Output
 
-Group by severity (blocks-release / should-fix / nit). For each: the exact location, the
+Open the report with what you read: `**Reviewed:** commit <sha>, clean`, or
+`**Reviewed:** commit <sha> plus uncommitted changes to <files>`. Then group by
+severity (blocks-release / should-fix / nit). For each: the exact location, the
 problem, and the fix. End with a one-line verdict: safe to `pnpm publish`, or the
 specific things to fix first. When you ran a dry-run or `tar -tzf`, quote the key lines.

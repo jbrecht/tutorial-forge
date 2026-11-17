@@ -21,7 +21,7 @@ The shared agents come from kit (`kit@jbrecht`, enabled in `.claude/settings.jso
 
 | Agent | Reach for it | It produces |
 |---|---|---|
-| `kit:code-reviewer` | before committing anything beyond docs: timing math, the flash/sync path, ffmpeg builders, process cleanup, the public API | Blocker / Should fix / Nit findings and a verdict |
+| `kit:code-reviewer` | before pushing anything beyond docs: timing math, the flash/sync path, ffmpeg builders, process cleanup, the public API | Blocker / Should fix / Nit findings and a verdict |
 | `kit:qa-engineer` | after a feature lands, on a diff that adds behavior, or to audit an area's coverage; it walks the render as an author (timing regimes, composition, i18n, TTS, recording, environment) | a P0 / P1 / P2 gap report; writes tests when asked |
 | `kit:designer` | anything that changes how a render looks or reads, or how the CLI talks to an author; it watches a real render | findings on the output experience, quick wins apart from design decisions |
 | `kit:product-manager` | grooming, deciding what's next, shaping an idea into issues | Now / Next / Later, draft issues (John approves before anything is filed), the decisions that block work |
