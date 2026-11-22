@@ -5,7 +5,6 @@
       "Bash(rg *)",
       "Bash(find *)",
       "Bash(ls *)",
-      "Bash(cat *)",
       "Bash(head *)",
       "Bash(tail *)",
       "Bash(wc *)",
